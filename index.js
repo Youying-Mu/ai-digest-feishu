@@ -1,211 +1,192 @@
-require("dotenv").config();
-const axios = require("axios");
+// 在文件顶部添加依赖
+const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
 
-const FEEDS = {
-  blogs: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json",
-  podcasts: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json",
-  x: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json",
-};
+// ====== 核心函数：生成AI技术摘要 ======
+async function generateDigest() {
+  console.log('🧠 正在调用AI模型生成技术摘要...');
+  
+  const today = new Date().toISOString().split('T')[0];
+  const currentDate = new Date().toLocaleDateString('zh-CN', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'long'
+  });
 
-async function fetchFeeds() {
-  try {
-    const [blogs, podcasts, x] = await Promise.all([
-      axios.get(FEEDS.blogs, { timeout: 10000 }),
-      axios.get(FEEDS.podcasts, { timeout: 10000 }),
-      axios.get(FEEDS.x, { timeout: 10000 }),
-    ]);
+  // 构建提示词
+  const prompt = `你是一位资深AI技术专家，请为${currentDate}生成一份专业的AI技术每日摘要。要求：
 
-    return {
-      blogs: blogs.data.slice(0, 3),
-      podcasts: podcasts.data.slice(0, 3),
-      x: x.data.slice(0, 5),
-    };
-  } catch (error) {
-    console.error('获取 feeds 失败:', error.message);
-    throw error;
-  }
-}
+1. **时效性**：重点关注最近24-48小时内的AI技术动态
+2. **专业性**：包含技术细节，避免泛泛而谈
+3. **结构化**：按以下格式组织：
 
-function buildPrompt(data) {
-  return `
-You are an AI assistant specialized in summarizing AI/tech content.
+## 🚀 今日AI技术摘要 - ${today}
 
-Summarize the following AI updates into a concise daily digest.
+### 🔥 热点技术
+- [技术名称]：简要描述技术突破和应用场景
+- [技术名称]：简要描述技术突破和应用场景
 
-Requirements:
-- Keep only key insights and most important updates
-- Each item maximum 2 lines
-- Output bilingual format (English first, then Chinese translation)
-- Format clean for reading in a card
-- Focus on actionable insights and trends
+### 💡 研究突破
+- [论文/项目名称]：核心贡献和技术亮点
+- [论文/项目名称]：核心贡献和技术亮点
 
-Content:
-Blogs:
-${JSON.stringify(data.blogs)}
+### 🏢 产业动态
+- [公司名称]：重要产品发布或技术进展
+- [公司名称]：重要产品发布或技术进展
 
-Podcasts:
-${JSON.stringify(data.podcasts)}
+### 📊 技术趋势
+- [趋势名称]：当前发展状况和未来预测
+- [趋势名称]：当前发展状况和未来预测
 
-X (Twitter):
-${JSON.stringify(data.x)}
-`;
-}
+### 🎯 开发者建议
+- [具体建议]：针对开发者的实用技术建议
+- [具体建议]：针对开发者的实用技术建议
 
-async function callQwen(prompt) {
-  if (!process.env.QWEN_API_KEY) {
-    throw new Error('QWEN_API_KEY environment variable is not set');
-  }
+4. **语言**：使用简体中文，专业但易懂
+5. **字数**：300-500字，信息密度高
+6. **避免**：广告、营销内容、重复信息`;
 
   try {
-    const res = await axios.post(
-      "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation",
+    // 调用DashScope API
+    const response = await axios.post(
+      'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
       {
-        model: "qwen-turbo",
-        input: { prompt },
+        model: 'qwen-max',
+        input: {
+          messages: [
+            {
+              role: 'system',
+              content: '你是一位专业的AI技术分析师，专注于生成高质量的技术摘要。'
+            },
+            {
+              role: 'user',
+              content: prompt
+            }
+          ]
+        },
+        parameters: {
+          result_format: 'message'
+        }
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
+          'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+          'Content-Type': 'application/json',
+          'X-DashScope-Plugin': 'header-uuid-plugin',
+          'X-Request-Id': uuidv4() // 添加唯一请求ID
+        }
       }
     );
 
-    if (res.data.output && res.data.output.text) {
-      return res.data.output.text;
-    } else {
-      throw new Error('Qwen API returned unexpected response format');
-    }
+    // 提取生成的摘要内容
+    const content = response.data.output.choices[0].message.content;
+    console.log('✅ AI摘要生成成功');
+    
+    // 清理和格式化内容
+    return content.trim();
+    
   } catch (error) {
-    console.error('Qwen API 调用失败:', error.response?.data || error.message);
+    console.error('❌ AI生成失败:');
+    if (error.response) {
+      console.error('API响应状态:', error.response.status);
+      console.error('API响应数据:', JSON.stringify(error.response.data, null, 2));
+      
+      // 处理常见错误
+      if (error.response.status === 401) {
+        throw new Error('DashScope API密钥无效或过期');
+      } else if (error.response.status === 429) {
+        throw new Error('API调用频率限制，请稍后重试');
+      } else if (error.response.status === 400) {
+        throw new Error('请求参数错误，请检查prompt格式');
+      }
+    }
+    console.error('错误详情:', error.message);
     throw error;
   }
 }
 
-function buildCard(content) {
-  // 确保内容格式化为飞书 Markdown
-  const formattedContent = content.replace(/\n{3,}/g, '\n\n').trim();
+// ====== 飞书推送函数 ======
+async function sendToFeishu(content) {
+  console.log('📤 准备发送到飞书...');
   
-  return {
-    msg_type: "interactive",
-    card: {
-      config: {
-        wide_screen_mode: true,
-      },
-      header: {
-        title: {
-          tag: "plain_text",
-          content: "🤖 AI Digest 每日更新 | Daily AI Digest",
-        },
-        template: "blue",
-      },
-      elements: [
-        {
-          tag: "div",
-          text: {
-            tag: "lark_md",
-            content: formattedContent,
-          },
-        },
-        {
-          tag: "hr"
-        },
-        {
-          tag: "note",
-          elements: [
-            {
-              tag: "plain_text",
-              content: `更新时间: ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`,
-            }
-          ]
-        }
-      ],
-    },
-  };
-}
-
-async function sendToFeishu(card) {
   if (!process.env.FEISHU_WEBHOOK) {
-    throw new Error('FEISHU_WEBHOOK environment variable is not set');
+    console.error('🚨 错误: FEISHU_WEBHOOK 环境变量未设置！');
+    throw new Error('FEISHU_WEBHOOK 环境变量缺失');
   }
 
+  const webhookUrl = process.env.FEISHU_WEBHOOK;
+  console.log('📡 发送请求到:', webhookUrl.substring(0, 40) + '...');
+
   try {
-    const response = await axios.post(process.env.FEISHU_WEBHOOK, card, {
-      timeout: 10000,
+    const response = await axios.post(webhookUrl, {
+      msg_type: "interactive",
+      card: {
+        config: { wide_screen_mode: true },
+        header: { 
+          title: { content: "🚀 每日AI技术摘要", tag: "plain_text" }, 
+          template: "blue" 
+        },
+        elements: [{ 
+          tag: "markdown", 
+          content: content.substring(0, 4000) // 飞书消息长度限制
+        }]
+      }
     });
     
-    if (response.data.StatusCode !== 0) {
-      console.error('飞书推送失败:', response.data);
-      throw new Error('飞书推送失败');
+    console.log('✅ 飞书响应状态:', response.status);
+    console.log('📋 飞书响应数据:', JSON.stringify(response.data, null, 2));
+    
+    if (response.data.code === 0) {
+      console.log('🎉 飞书消息发送成功！');
+      return true;
+    } else {
+      console.error('❌ 飞书API返回错误:', response.data.msg);
+      throw new Error(`飞书API错误: ${response.data.msg}`);
     }
-    console.log('✅ 飞书推送成功');
-    return true;
   } catch (error) {
-    console.error('飞书推送错误:', error.response?.data || error.message);
+    console.error('🔥 发送到飞书时出错:');
+    console.error('错误消息:', error.message);
+    if (error.response) {
+      console.error('响应状态:', error.response.status);
+      console.error('响应数据:', JSON.stringify(error.response.data, null, 2));
+    }
     throw error;
   }
 }
 
-async function main() {
-  console.log('🚀 开始执行 AI Digest 任务...');
-  console.log(`📅 当前时间: ${new Date().toISOString()}`);
-
-  try {
-    // 1. 获取 feeds
-    console.log('📥 获取 feeds 数据...');
-    const feeds = await fetchFeeds();
-    console.log(`✅ 获取到 feeds: 博客 ${feeds.blogs.length} 条, 播客 ${feeds.podcasts.length} 条, X ${feeds.x.length} 条`);
-
-    // 2. 调用 Qwen 生成摘要
-    console.log('🧠 调用 Qwen 生成摘要...');
-    const prompt = buildPrompt(feeds);
-    const summary = await callQwen(prompt);
-    console.log('✅ 摘要生成成功');
-
-    // 3. 构建飞书卡片
-    console.log('🎨 构建飞书卡片...');
-    const card = buildCard(summary);
-
-    // 4. 推送到飞书
-    console.log('📤 推送到飞书...');
-    await sendToFeishu(card);
-
-    console.log('🎉 任务完成！');
-    return true;
-  } catch (error) {
-    console.error('❌ 任务执行失败:', error.message);
-    // 可以考虑在这里添加错误通知
-    throw error;
-  }
-}
-
-// 立即执行或通过 GitHub Actions 触发
-main().catch(error => {
-  console.error('程序异常退出:', error);
-  process.exit(1);
-});
-
-// 在文件末尾添加
+// ====== 主函数 ======
 async function main() {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    console.log(`🚀 开始生成 ${today} 的技术摘要...`);
+    console.log(`🚀 开始生成 ${new Date().toISOString().split('T')[0]} 的技术摘要...`);
     
+    // 1. 生成摘要
     const digest = await generateDigest();
-    console.log('✅ 摘要生成成功:', digest);
+    console.log('✅ 摘要内容预览:', digest.substring(0, 100) + '...');
     
+    // 2. 发送到飞书
     await sendToFeishu(digest);
-    console.log('✅ 飞书消息发送成功！');
+    
+    console.log('✅ 任务执行成功！');
+    process.exit(0);
+    
   } catch (error) {
     console.error('❌ 任务执行失败:');
     console.error('错误信息:', error.message);
     console.error('错误堆栈:', error.stack);
     
-    // 即使失败也继续执行，避免 exit code 1
-    process.exit(0); // 或者保持 process.exit(1) 但要确保能看到错误
+    // 即使失败也发送错误通知到飞书（可选）
+    try {
+      if (process.env.FEISHU_WEBHOOK) {
+        await sendToFeishu(`🚨 **任务执行失败**\n\n错误信息: ${error.message}\n\n时间: ${new Date().toLocaleString()}`);
+      }
+    } catch (notifyError) {
+      console.error('❌ 发送错误通知失败:', notifyError.message);
+    }
+    
+    process.exit(1);
   }
 }
 
+// 启动主函数
 main();
-
