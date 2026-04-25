@@ -150,7 +150,9 @@ function formatSourcesForAI(sourcesData) {
           return line.toLowerCase().includes('business') || 
                  line.toLowerCase().includes('strategy') || 
                  line.toLowerCase().includes('market') ||
-                 line.toLowerCase().includes('customer');
+                 line.toLowerCase().includes('customer') ||
+                 line.toLowerCase().includes('technical') ||
+                 line.toLowerCase().includes('implementation');
         }).slice(0, 2);
         
         if (insightLines.length > 0) {
@@ -197,7 +199,8 @@ ${sourcesContext}
 2. **思考维度**：
    - 对业务的影响（降本/增效/新收入）
    - 用户体验变革（交互模式、使用门槛）
-   - 竞争格局变化（头部玩家战略意图）
+   - 技术（实现过程、边界、难点、趋势、自然语言描述原理）
+   - 竞争格局变化（头部玩家战略意图、对比优劣）
    - 个人职业发展（技能需求、市场机会）
 3. **结构化输出**（按此顺序，缺一不可）：
    ⚡️ **重磅发布与竞品**：OpenAI/Anthropic/Google等头部公司动作的产品化解读。不超过2条。
@@ -207,7 +210,7 @@ ${sourcesContext}
 4. **格式要求**：
    - 每个要点用短句，不超过3行
    - 避免技术细节，多用"用户将..."、"企业可以..."、"这意味着..."句式
-   - 总字数严格控制在300字以内
+   - 总字数严格控制在500字以内
    - 用emoji做视觉锚点，增强可读性`;
 
   const maxRetries = 2;
@@ -269,55 +272,188 @@ ${sourcesContext}
   }
 }
 
-// ====== 推送至飞书（优化可读性） ======
+// ====== 推送至飞书（富文本卡片版本） ======
 async function sendToFeishu(content) {
-  console.log('🚀 正在推送至飞书（优化格式）...');
+  console.log('🚀 正在推送至飞书（富文本卡片）...');
   
   const webhook = process.env.FEISHU_WEBHOOK;
   if (!webhook) {
     throw new Error('❌ FEISHU_WEBHOOK 环境变量未设置');
   }
 
-  // 【关键】大幅优化飞书消息格式
+  // 【关键】飞书富文本卡片格式
   const currentDate = new Date().toLocaleDateString('zh-CN', {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     weekday: 'long'
   });
+
+  // 将内容按段落分割，用于富文本格式化
+  const sections = content.split('\n').filter(line => line.trim() !== '');
   
-  // 添加视觉分割和标题装饰
-  const formattedContent = `🤖 AI PM 战略简报 | ${currentDate}
-${'='.repeat(40)}
-${content}
-${'='.repeat(40)}
-💡 源自 Follow-Builders | 自动生成`;
+  // 构建富文本卡片内容
+  const cardContent = {
+    config: {
+      wide_screen_mode: true
+    },
+    header: {
+      title: {
+        content: `🤖 AI PM 战略简报 | ${currentDate}`,
+        tag: 'plain_text'
+      },
+      template: 'blue'  // 蓝色标题栏
+    },
+    elements: [
+      {
+        tag: 'div',
+        text: {
+          content: '## ⚡️ 重磅发布与竞品',
+          tag: 'lark_md'
+        }
+      },
+      {
+        tag: 'hr'  // 分割线
+      }
+    ]
+  };
+
+  // 动态构建内容区域
+  let currentSection = '';
+  let inSection = false;
+
+  sections.forEach(line => {
+    if (line.includes('⚡️ **重磅发布与竞品**') || line.includes('⚡️ 重磅发布与竞品')) {
+      currentSection = '⚡️ 重磅发布与竞品';
+      inSection = true;
+      return;
+    }
+    if (line.includes('🏗️ **Agent生产力革命**') || line.includes('🏗️ Agent生产力革命')) {
+      currentSection = '🏗️ Agent生产力革命';
+      inSection = true;
+      return;
+    }
+    if (line.includes('📈 **产业战略观察**') || line.includes('📈 产业战略观察')) {
+      currentSection = '📈 产业战略观察';
+      inSection = true;
+      return;
+    }
+    if (line.includes('💡 **PM行动洞察**') || line.includes('💡 PM行动洞察')) {
+      currentSection = '💡 PM行动洞察';
+      inSection = true;
+      return;
+    }
+
+    if (inSection && line.trim() !== '') {
+      // 根据不同部分添加不同样式
+      if (currentSection === '⚡️ 重磅发布与竞品') {
+        cardContent.elements.push({
+          tag: 'div',
+          text: {
+            content: `- ${line.trim().replace(/^- /, '')}`,
+            tag: 'lark_md'
+          }
+        });
+      } else if (currentSection === '🏗️ Agent生产力革命') {
+        if (cardContent.elements[cardContent.elements.length - 1].tag !== 'hr') {
+          cardContent.elements.push({ tag: 'hr' });
+          cardContent.elements.push({
+            tag: 'div',
+            text: {
+              content: '## 🏗️ Agent生产力革命',
+              tag: 'lark_md'
+            }
+          });
+        }
+        cardContent.elements.push({
+          tag: 'div',
+          text: {
+            content: `- ${line.trim().replace(/^- /, '')}`,
+            tag: 'lark_md'
+          }
+        });
+      } else if (currentSection === '📈 产业战略观察') {
+        if (cardContent.elements[cardContent.elements.length - 1].tag !== 'hr') {
+          cardContent.elements.push({ tag: 'hr' });
+          cardContent.elements.push({
+            tag: 'div',
+            text: {
+              content: '## 📈 产业战略观察',
+              tag: 'lark_md'
+            }
+          });
+        }
+        cardContent.elements.push({
+          tag: 'div',
+          text: {
+            content: `- ${line.trim().replace(/^- /, '')}`,
+            tag: 'lark_md'
+          }
+        });
+      } else if (currentSection === '💡 PM行动洞察') {
+        if (cardContent.elements[cardContent.elements.length - 1].tag !== 'hr') {
+          cardContent.elements.push({ tag: 'hr' });
+          cardContent.elements.push({
+            tag: 'div',
+            text: {
+              content: '## 💡 PM行动洞察',
+              tag: 'lark_md'
+            }
+          });
+        }
+        cardContent.elements.push({
+          tag: 'div',
+          text: {
+            content: `🚀 ${line.trim().replace(/^- /, '')}`,
+            tag: 'lark_md'
+          }
+        });
+      }
+    }
+  });
+
+  // 添加底部信息
+  cardContent.elements.push({ tag: 'hr' });
+  cardContent.elements.push({
+    tag: 'note',
+    elements: [
+      {
+        tag: 'plain_text',
+        content: `💡 源自 Follow-Builders | ${new Date().toLocaleDateString()} 自动生成`
+      }
+    ]
+  });
 
   try {
     const response = await axios.post(
       webhook,
       {
-        msg_type: 'text',
-        content: {
-          text: formattedContent
-        }
+        msg_type: 'interactive',
+        card: cardContent
       },
       {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 10000
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'AI-Digest-Bot'
+        },
+        timeout: 15000
       }
     );
 
     if (response.data?.code === 0) {
-      console.log('✅ 战略简报已成功发送至飞书！');
+      console.log('✅ 战略简报已成功以富文本卡片形式发送至飞书！');
       return true;
     } else {
+      console.error('❌ 飞书API返回错误:', response.data);
       throw new Error(`飞书 API 返回错误: ${JSON.stringify(response.data)}`);
     }
   } catch (error) {
     console.error('❌ 飞书推送失败:', error.message);
     if (error.response) {
-      console.error('飞书响应:', error.response.data);
+      console.error('飞书响应状态:', error.response.status);
+      console.error('飞书响应数据:', error.response.data);
+    } else if (error.request) {
+      console.error('飞书请求超时或无响应');
     }
     throw error;
   }
@@ -337,7 +473,7 @@ async function saveDigestToFile(content) {
 // ====== 主流程 ======
 async function main() {
   console.log('========================================');
-  console.log('🚀 AI产品经理战略简报 - 开始执行');
+  console.log('🚀 AI产品经理战略简报 - 开始执行（富文本卡片版）');
   console.log('========================================\n');
   
   try {
@@ -350,7 +486,7 @@ async function main() {
     // 3. 保存到文件
     await saveDigestToFile(digest);
     
-    // 4. 推送至飞书（优化格式）
+    // 4. 推送至飞书（富文本卡片）
     await sendToFeishu(digest);
     
     console.log('\n========================================');
