@@ -71,3 +71,42 @@ ${sourcesContext}
     }
   }
 }
+
+// ====== 推送至飞书 ======
+async function sendToFeishu(content) {
+  console.log('🚀 正在推送至飞书...');
+  
+  const webhook = process.env.FEISHU_WEBHOOK;
+  if (!webhook) {
+    throw new Error('❌ FEISHU_WEBHOOK 环境变量未设置');
+  }
+
+  try {
+    const response = await axios.post(
+      webhook,
+      {
+        msg_type: 'text',
+        content: {
+          text: content
+        }
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 10000
+      }
+    );
+
+    if (response.data?.code === 0) {
+      console.log('✅ 摘要已成功发送至飞书！');
+      return true;
+    } else {
+      throw new Error(`飞书 API 返回错误: ${JSON.stringify(response.data)}`);
+    }
+  } catch (error) {
+    console.error('❌ 飞书推送失败:', error.message);
+    if (error.response) {
+      console.error('飞书响应:', error.response.data);
+    }
+    throw error;
+  }
+}
