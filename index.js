@@ -18,10 +18,12 @@ async function fetchBlogs() {
     const data = response.data;
     
     const blogs = (data.blogs || []).map(blog => ({
-      source: blog.name,
+      type: 'blog',
       title: blog.title,
+      source: blog.name,
       url: blog.url,
-      content: blog.content || blog.description || ''
+      content: blog.content || blog.description || '',
+      timestamp: new Date().toISOString()
     }));
     
     console.log(`✅ 获取到 ${blogs.length} 篇博客`);
@@ -41,10 +43,12 @@ async function fetchPodcasts() {
     const data = response.data;
     
     const podcasts = (data.podcasts || []).map(podcast => ({
-      source: podcast.name,
+      type: 'podcast',
       title: podcast.title,
+      source: podcast.name,
       url: podcast.url,
-      transcript: podcast.transcript || ''
+      transcript: podcast.transcript || '',
+      timestamp: new Date().toISOString()
     }));
     
     console.log(`✅ 获取到 ${podcasts.length} 个播客`);
@@ -69,19 +73,21 @@ async function fetchXData() {
         if (user.tweets && Array.isArray(user.tweets)) {
           user.tweets.forEach(tweet => {
             tweets.push({
-              user: user.name,
-              handle: user.handle,
-              text: tweet.text,
+              type: 'tweet',
+              title: tweet.text.substring(0, 100) + (tweet.text.length > 100 ? '...' : ''),
+              source: `${user.name} (@${user.handle})`,
               url: tweet.url,
-              likes: tweet.likes || 0
+              content: tweet.text,
+              likes: tweet.likes || 0,
+              timestamp: new Date().toISOString()
             });
           });
         }
       });
     }
     
-    // 【优化】过滤低质量推文：点赞数低于20的直接舍弃（更严格）
-    const filteredTweets = tweets.filter(tweet => tweet.likes >= 20);
+    // 【优化】过滤低质量推文：点赞数低于25的直接舍弃
+    const filteredTweets = tweets.filter(tweet => tweet.likes >= 25);
     console.log(`✅ 获取到 ${filteredTweets.length} 条高质量推文（原始: ${tweets.length}）`);
     return filteredTweets;
   } catch (error) {
@@ -101,10 +107,22 @@ async function fetchAllSources() {
       fetchXData()
     ]);
     
+    // 合并所有数据源并按时间排序（最新在前）
+    const allSources = [
+      ...blogs.map(item => ({ ...item, priority: 3 })),    // 博客优先级最高
+      ...podcasts.map(item => ({ ...item, priority: 2 })), // 播客次之
+      ...tweets.map(item => ({ ...item, priority: 1 }))    // 推文最低
+    ].sort((a, b) => {
+      // 先按优先级排序，再按时间倒序
+      if (b.priority !== a.priority) return b.priority - a.priority;
+      return new Date(b.timestamp) - new Date(a.timestamp);
+    });
+    
+    // 只取前6条最重要的信息
+    const topSources = allSources.slice(0, 6);
+    
     return {
-      blogs,
-      podcasts,
-      tweets,
+      sources: topSources,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
@@ -113,84 +131,73 @@ async function fetchAllSources() {
   }
 }
 
-// ====== 格式化数据供 AI 使用（极简版） ======
+// ====== 格式化数据供 AI 使用（保持原始结构） ======
 function formatSourcesForAI(sourcesData) {
-  const { blogs, podcasts, tweets } = sourcesData;
+  const { sources } = sourcesData;
   
-  let output = '';
+  let output = '## 今日关键信息源（按优先级排序）\n\n';
   
-  if (blogs && blogs.length > 0) {
-    output += '### 【技术博客】\n';
-    blogs.slice(0, 3).forEach((blog, i) => {
-      output += `${i + 1}. ${blog.title}\n`;
-      output += `来源: ${blog.source}\n`;
-      output += `链接: ${blog.url}\n\n`;
-    });
-  }
-  
-  if (podcasts && podcasts.length > 0) {
-    output += '### 【行业播客】\n';
-    podcasts.slice(0, 2).forEach((podcast, i) => {
-      output += `${i + 1}. ${podcast.title}\n`;
-      output += `来源: ${podcast.source}\n`;
-      output += `链接: ${podcast.url}\n\n`;
-    });
-  }
-  
-  if (tweets && tweets.length > 0) {
-    output += '### 【API/产品发布】\n';
-    tweets.slice(0, 4).forEach((tweet, i) => {
-      output += `${i + 1}. "${tweet.text.substring(0, 120)}${tweet.text.length > 120 ? '...' : ''}"\n`;
-      output += `来源: @${tweet.handle} (👍${tweet.likes})\n`;
-      output += `链接: ${tweet.url}\n\n`;
-    });
-  }
+  sources.forEach((source, index) => {
+    output += `### 信息源 ${index + 1}\n`;
+    output += `**类型**: ${source.type === 'blog' ? '技术博客' : source.type === 'podcast' ? '行业播客' : '产品/API发布'}\n`;
+    output += `**标题**: ${source.title}\n`;
+    output += `**来源**: ${source.source}\n`;
+    output += `**链接**: ${source.url}\n`;
+    
+    if (source.content && source.content.trim() !== '') {
+      // 提取关键内容片段
+      const contentPreview = source.content.substring(0, 300) + (source.content.length > 300 ? '...' : '');
+      output += `**内容预览**: ${contentPreview}\n`;
+    } else if (source.transcript && source.transcript.trim() !== '') {
+      const transcriptPreview = source.transcript.substring(0, 300) + (source.transcript.length > 300 ? '...' : '');
+      output += `**内容预览**: ${transcriptPreview}\n`;
+    }
+    
+    output += `\n`;
+  });
   
   return output;
 }
 
-// ====== 生成AI摘要（技术边界+产品洞察） ======
+// ====== 生成AI摘要（逐条深度分析） ======
 async function generateDigest(sourcesData) {
-  console.log('🧠 正在生成技术边界与产品洞见...');
+  console.log('🧠 正在生成逐条深度分析...');
   
   const today = new Date().toISOString().split('T')[0];
   const sourcesContext = formatSourcesForAI(sourcesData);
   
-  // 【关键】彻底重构prompt，聚焦技术边界、API、产品创新
-  const prompt = `你是一位资深技术产品专家，每天为AI产品经理提供最新技术边界和产品洞见。请基于以下${today}的真实动态，生成一份【AI技术与产品洞察简报】。
+  // 【关键】彻底重构prompt，逐条分析+思考题
+  const prompt = `你是一位资深AI技术产品专家，擅长深度分析每个技术动态。请基于${today}的以下信息源，为每个信息源提供深度分析，并在最后提出一道思考题。
 
 ${sourcesContext}
 
-## 内容要求（必须严格遵守）：
-1. **内容定位**：只关注最有价值的信息，拒绝泛泛而谈。
-2. **核心结构**：
-   🔗 **动态概述**：用3-4条bullet points列出最重要的技术/产品动态，每条包含：
-   - 简洁标题
-   - 来源链接
-   - 1句话核心价值
-   
-   🎯 **技术边界分析**：针对最重要的1-2个技术动态，分析：
-   - 当前技术能实现什么效果（具体场景）
-   - 技术边界和限制（什么做不到）
-   - 新发布的API及其能力
-   
-   💡 **产品洞见**：针对最重要的1-2个产品动态，分析：
-   - 产品idea创新点
+## 分析要求（必须严格遵守）：
+1. **逐条分析**：对每个信息源独立分析，不要汇总
+2. **分析结构**（对每个信息源，按此顺序）：
+   📌 **一句话概述**：用1句话总结该信息的核心
+   🔗 **完整链接**：显示完整的URL链接
+   💎 **核心价值**：该技术/产品解决了什么核心问题？对用户/企业的价值是什么？
+   🎯 **技术边界分析**：
+   - 能实现什么具体效果（用数字说明）
+   - 技术限制和边界（什么场景不适用）
+   - 新发布的API及其关键参数
+   💡 **产品洞见**：
+   - 解决的核心痛点
    - 目标用户定位
    - 交互方式革新
-   - 与主要竞品的差异化对比（用简表呈现）
-   
-   ❓ **思考题**：基于今日动态，提出1个深度思考题，帮助读者提升产品思维。
-
-3. **写作原则**：
-   - 用具体数字代替模糊描述（不说“性能提升”，说“延迟从2s降至200ms”）
-   - 重点关注对AI产品经理实际有用的信息
-   - 技术分析要自然语言描述，避免代码细节
-   - 产品分析要包含具体场景和用户价值
-4. **格式要求**：
-   - 每个模块用emoji作为视觉锚点
-   - 竞品对比用简单表格呈现
-   - 总字数严格控制在600字以内
+   - 与1-2个主要竞品的对比分析（用简表）
+3. **最后部分**：
+   ❓ **思考题**：基于今日所有信息，提出1道深度思考题，帮助读者提升产品思维
+4. **写作原则**：
+   - 用具体数字和场景，避免模糊描述
+   - 技术分析用自然语言，避免代码
+   - 产品分析包含具体用户场景
+   - 竞品对比要客观，突出差异化
+5. **格式要求**：
+   - 每个信息源用"---"分隔
+   - 每个分析模块用emoji作为视觉锚点
+   - 竞品对比用Markdown表格
+   - 总字数控制在800字以内
    - 语言精练，直击要害`;
 
   const maxRetries = 2;
@@ -223,13 +230,13 @@ ${sourcesContext}
 
       if (response.data?.output?.choices?.[0]?.message?.content) {
         const digest = response.data.output.choices[0].message.content;
-        console.log('✅ 技术与产品洞察生成成功');
-        console.log('📋 洞察预览:', digest.substring(0, 150) + '...');
+        console.log('✅ 逐条深度分析生成成功');
+        console.log('📋 分析预览:', digest.substring(0, 200) + '...');
         return digest;
       } else if (response.data?.output?.text) {
         const digest = response.data.output.text;
-        console.log('✅ 技术与产品洞察生成成功');
-        console.log('📋 洞察预览:', digest.substring(0, 150) + '...');
+        console.log('✅ 逐条深度分析生成成功');
+        console.log('📋 分析预览:', digest.substring(0, 200) + '...');
         return digest;
       } else {
         console.error('❌ API响应格式不正确');
@@ -252,42 +259,26 @@ ${sourcesContext}
   }
 }
 
-// ====== 生成信息源摘要（极简版） ======
+// ====== 生成原始信息源摘要 ======
 function generateSourcesSummary(sourcesData) {
-  const { blogs, podcasts, tweets } = sourcesData;
+  const { sources } = sourcesData;
   
-  let summary = '## 原始信息源\n\n';
+  let summary = '## 原始信息源清单\n\n';
   
-  if (blogs && blogs.length > 0) {
-    summary += '### 📚 技术博客\n';
-    blogs.slice(0, 3).forEach(blog => {
-      summary += `- [${blog.title.substring(0, 50)}${blog.title.length > 50 ? '...' : ''}](${blog.url})\n`;
-      summary += `  来源: ${blog.source}\n\n`;
-    });
-  }
-  
-  if (podcasts && podcasts.length > 0) {
-    summary += '### 🎙️ 行业播客\n';
-    podcasts.slice(0, 2).forEach(podcast => {
-      summary += `- [${podcast.title.substring(0, 50)}${podcast.title.length > 50 ? '...' : ''}](${podcast.url})\n`;
-      summary += `  来源: ${podcast.source}\n\n`;
-    });
-  }
-  
-  if (tweets && tweets.length > 0) {
-    summary += '### 💻 API/产品发布\n';
-    tweets.slice(0, 4).forEach(tweet => {
-      summary += `- [@${tweet.handle}: "${tweet.text.substring(0, 40)}${tweet.text.length > 40 ? '...' : ''}"](${tweet.url})\n`;
-      summary += `  点赞: ${tweet.likes}\n\n`;
-    });
-  }
+  sources.forEach((source, index) => {
+    summary += `### ${index + 1}. ${source.title.substring(0, 60)}${source.title.length > 60 ? '...' : ''}\n`;
+    summary += `- **类型**: ${source.type === 'blog' ? '技术博客' : source.type === 'podcast' ? '行业播客' : '产品/API发布'}\n`;
+    summary += `- **来源**: ${source.source}\n`;
+    summary += `- **链接**: [点击查看完整内容](${source.url})\n`;
+    summary += `- **优先级**: ${source.priority}\n\n`;
+  });
   
   return summary;
 }
 
-// ====== 推送至飞书（极简专业卡片） ======
+// ====== 推送至飞书（逐条深度分析卡片） ======
 async function sendToFeishu(content, sourcesData) {
-  console.log('🚀 正在推送至飞书（技术产品洞察版）...');
+  console.log('🚀 正在推送至飞书（逐条深度分析版）...');
   
   const webhook = process.env.FEISHU_WEBHOOK;
   if (!webhook) {
@@ -301,20 +292,20 @@ async function sendToFeishu(content, sourcesData) {
     weekday: 'long'
   });
 
-  // 生成信息源摘要
+  // 生成原始信息源摘要
   const sourcesSummary = generateSourcesSummary(sourcesData);
   
-  // 【关键】极简专业富文本卡片格式
+  // 【关键】逐条深度分析富文本卡片格式
   const cardContent = {
     config: {
       wide_screen_mode: true
     },
     header: {
       title: {
-        content: `AI技术与产品洞察 | ${currentDate}`,
+        content: `AI技术深度洞察 | ${currentDate}`,
         tag: 'plain_text'
       },
-      template: 'indigo'  // 深蓝色，技术感
+      template: 'blue'  // 蓝色，专业深度感
     },
     elements: [
       {
@@ -330,7 +321,7 @@ async function sendToFeishu(content, sourcesData) {
       {
         tag: 'div',
         text: {
-          content: '## 🔗 原始信息源\n\n点击链接查看详细内容',
+          content: '## 📚 原始信息源清单\n\n点击链接查看完整内容',
           tag: 'lark_md'
         }
       },
@@ -349,7 +340,7 @@ async function sendToFeishu(content, sourcesData) {
         elements: [
           {
             tag: 'plain_text',
-            content: `🧠 聚焦技术边界与产品创新 | 生成时间: ${new Date().toLocaleTimeString()}`
+            content: `🔍 深度技术分析 | 生成时间: ${new Date().toLocaleTimeString()}`
           }
         ]
       }
@@ -366,14 +357,14 @@ async function sendToFeishu(content, sourcesData) {
       {
         headers: { 
           'Content-Type': 'application/json',
-          'User-Agent': 'AI-Tech-Insight'
+          'User-Agent': 'AI-Tech-Deep-Dive'
         },
         timeout: 15000
       }
     );
 
     if (response.data?.code === 0) {
-      console.log('✅ 技术产品洞察简报已成功发送至飞书！');
+      console.log('✅ 逐条深度分析简报已成功发送至飞书！');
       return true;
     } else {
       console.error('❌ 飞书API返回错误:', response.data);
@@ -397,10 +388,10 @@ async function saveDigestToFile(content, sourcesData) {
     const filename = `digest_${new Date().toISOString().split('T')[0]}.md`;
     const sourcesSummary = generateSourcesSummary(sourcesData);
     
-    const fullContent = `${content}\n\n${'='.repeat(80)}\n\n${sourcesSummary}\n\n生成时间: ${new Date().toISOString()}`;
+    const fullContent = `${content}\n\n${'='.repeat(100)}\n\n${sourcesSummary}\n\n生成时间: ${new Date().toISOString()}`;
     
     await fs.writeFile(filename, fullContent, 'utf-8');
-    console.log(`💾 技术产品洞察已保存到文件: ${filename}`);
+    console.log(`💾 深度分析简报已保存到文件: ${filename}`);
   } catch (error) {
     console.error('❌ 保存文件失败:', error.message);
   }
@@ -409,20 +400,25 @@ async function saveDigestToFile(content, sourcesData) {
 // ====== 主流程 ======
 async function main() {
   console.log('========================================');
-  console.log('🚀 AI技术与产品洞察简报 - 极简专业版');
+  console.log('🚀 AI技术深度洞察简报 - 逐条分析版');
   console.log('========================================\n');
   
   try {
-    // 1. 获取数据（带严格过滤）
+    // 1. 获取数据（带优先级排序）
     const sourcesData = await fetchAllSources();
     
-    // 2. 生成技术产品洞察
+    console.log(`📊 今日分析 ${sourcesData.sources.length} 个关键信息源`);
+    sourcesData.sources.forEach((source, i) => {
+      console.log(`   ${i + 1}. [${source.type.toUpperCase()}] ${source.title.substring(0, 50)}...`);
+    });
+    
+    // 2. 生成逐条深度分析
     const digest = await generateDigest(sourcesData);
     
     // 3. 保存到文件
     await saveDigestToFile(digest, sourcesData);
     
-    // 4. 推送至飞书（极简专业卡片）
+    // 4. 推送至飞书（逐条深度分析卡片）
     await sendToFeishu(digest, sourcesData);
     
     console.log('\n========================================');
