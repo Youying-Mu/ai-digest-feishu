@@ -2,96 +2,93 @@
 const axios = require('axios');
 const fs = require('fs').promises;
 
-// ====== 配置 ======
-const CONFIG = {
-  // X (Twitter) 用户列表
-  twitterUsers: [
-    'OpenAI',
-    'GoogleAI',
-    'MetaAI',
-    'AnthropicAI',
-    'xAI'
-  ],
-  // 博客源
-  blogs: [
-    { name: 'OpenAI Blog', url: 'https://openai.com/blog/rss' },
-    { name: 'Google AI Blog', url: 'https://ai.googleblog.com/feeds/posts/default?alt=rss' },
-    { name: 'Meta AI Blog', url: 'https://ai.meta.com/blog/rss/' }
-  ],
-  // 获取最近的推文数量
-  tweetCount: 5,
-  // 获取最近的博客文章数量
-  blogCount: 3
+// ====== 数据源配置 ======
+const DATA_SOURCES = {
+  blogs: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json",
+  podcasts: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json",
+  x: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json"
 };
 
-// ====== 获取 X (Twitter) 推文 ======
-async function fetchTweets() {
-  console.log('🐦 正在获取 X 推文...');
-  
-  // 模拟数据（实际项目中这里应该调用 Twitter API）
-  const mockTweets = [
-    { user: 'OpenAI', text: '我们发布了新的 GPT-4.5 模型，性能提升 30%' },
-    { user: 'GoogleAI', text: 'Gemini 2.0 正式上线，支持多模态推理' },
-    { user: 'MetaAI', text: 'Llama 3 开源，100B 参数版本免费使用' },
-    { user: 'AnthropicAI', text: 'Claude 3.5 发布，代码生成能力大幅提升' },
-    { user: 'xAI', text: 'Grok 2 进入测试阶段，专注于科学推理' }
-  ];
-  
-  console.log(`✅ 获取到 ${mockTweets.length} 条推文`);
-  return mockTweets;
-}
-
-// ====== 获取博客文章 ======
+// ====== 获取博客数据 ======
 async function fetchBlogs() {
-  console.log('📝 正在获取博客文章...');
+  console.log('📝 正在获取博客数据...');
   
-  // 模拟数据（实际项目中这里应该解析 RSS）
-  const mockBlogs = [
-    { 
-      source: 'OpenAI Blog', 
-      title: 'GPT-4.5 技术详解', 
-      summary: '新模型在代码生成和数学推理方面有显著提升'
-    },
-    { 
-      source: 'Google AI Blog', 
-      title: 'Gemini 2.0 架构解析', 
-      summary: '多模态统一架构，支持文本、图像、音频联合推理'
-    },
-    { 
-      source: 'Meta AI Blog', 
-      title: 'Llama 3 开源发布', 
-      summary: '100B 参数版本性能接近闭源模型，完全免费'
-    }
-  ];
-  
-  console.log(`✅ 获取到 ${mockBlogs.length} 篇博客`);
-  return mockBlogs;
+  try {
+    const response = await axios.get(DATA_SOURCES.blogs);
+    const data = response.data;
+    
+    // 提取博客信息
+    const blogs = (data.blogs || []).map(blog => ({
+      source: blog.name,
+      title: blog.title,
+      url: blog.url,
+      content: blog.content || blog.description || ''
+    }));
+    
+    console.log(`✅ 获取到 ${blogs.length} 篇博客`);
+    return blogs;
+  } catch (error) {
+    console.error('❌ 获取博客数据失败:', error.message);
+    return [];
+  }
 }
 
-// ====== 格式化数据供 AI 使用 ======
-function formatSourcesForAI(sourcesData) {
-  const { tweets, blogs } = sourcesData;
+// ====== 获取播客数据 ======
+async function fetchPodcasts() {
+  console.log('🎙️ 正在获取播客数据...');
   
-  let output = '';
-  
-  if (tweets && tweets.length > 0) {
-    output += '### X (Twitter) 动态\n';
-    tweets.forEach((tweet, i) => {
-      output += `${i + 1}. [@${tweet.user}]: ${tweet.text}\n`;
-    });
-    output += '\n';
+  try {
+    const response = await axios.get(DATA_SOURCES.podcasts);
+    const data = response.data;
+    
+    // 提取播客信息
+    const podcasts = (data.podcasts || []).map(podcast => ({
+      source: podcast.name,
+      title: podcast.title,
+      url: podcast.url,
+      transcript: podcast.transcript || ''
+    }));
+    
+    console.log(`✅ 获取到 ${podcasts.length} 个播客`);
+    return podcasts;
+  } catch (error) {
+    console.error('❌ 获取播客数据失败:', error.message);
+    return [];
   }
+}
+
+// ====== 获取 X (Twitter) 数据 ======
+async function fetchXData() {
+  console.log('🐦 正在获取 X 数据...');
   
-  if (blogs && blogs.length > 0) {
-    output += '### 博客文章\n';
-    blogs.forEach((blog, i) => {
-      output += `${i + 1}. [${blog.source}] ${blog.title}\n`;
-      output += `   摘要: ${blog.summary}\n`;
-    });
-    output += '\n';
+  try {
+    const response = await axios.get(DATA_SOURCES.x);
+    const data = response.data;
+    
+    // 提取推文信息
+    const tweets = [];
+    if (data.x && Array.isArray(data.x)) {
+      data.x.forEach(user => {
+        if (user.tweets && Array.isArray(user.tweets)) {
+          user.tweets.forEach(tweet => {
+            tweets.push({
+              user: user.name,
+              handle: user.handle,
+              text: tweet.text,
+              url: tweet.url,
+              likes: tweet.likes || 0
+            });
+          });
+        }
+      });
+    }
+    
+    console.log(`✅ 获取到 ${tweets.length} 条推文`);
+    return tweets;
+  } catch (error) {
+    console.error('❌ 获取 X 数据失败:', error.message);
+    return [];
   }
-  
-  return output;
 }
 
 // ====== 获取所有数据源 ======
@@ -99,20 +96,83 @@ async function fetchAllSources() {
   console.log('🔄 正在获取所有数据源...');
   
   try {
-    const [tweets, blogs] = await Promise.all([
-      fetchTweets(),
-      fetchBlogs()
+    const [blogs, podcasts, tweets] = await Promise.all([
+      fetchBlogs(),
+      fetchPodcasts(),
+      fetchXData()
     ]);
     
     return {
-      tweets,
       blogs,
+      podcasts,
+      tweets,
       timestamp: new Date().toISOString()
     };
   } catch (error) {
-    console.error('❌ 获取数据失败:', error.message);
+    console.error('❌ 获取数据源失败:', error.message);
     throw error;
   }
+}
+
+// ====== 格式化数据供 AI 使用 ======
+function formatSourcesForAI(sourcesData) {
+  const { blogs, podcasts, tweets } = sourcesData;
+  
+  let output = '';
+  
+  // 博客部分
+  if (blogs && blogs.length > 0) {
+    output += '### 博客文章\n';
+    blogs.forEach((blog, i) => {
+      output += `${i + 1}. [${blog.source}] ${blog.title}\n`;
+      if (blog.content) {
+        // 截取前200个字符作为摘要
+        const summary = blog.content.substring(0, 200).replace(/\n/g, ' ') + (blog.content.length > 200 ? '...' : '');
+        output += `   摘要: ${summary}\n`;
+      }
+      output += `   链接: ${blog.url}\n`;
+    });
+    output += '\n';
+  }
+  
+  // 播客部分
+  if (podcasts && podcasts.length > 0) {
+    output += '### 播客节目\n';
+    podcasts.forEach((podcast, i) => {
+      output += `${i + 1}. [${podcast.source}] ${podcast.title}\n`;
+      if (podcast.transcript) {
+        // 提取播客转录文本的关键内容
+        const lines = podcast.transcript.split('\n');
+        const keyLines = lines.filter(line => {
+          // 过滤掉时间戳行，保留实际对话内容
+          return !line.match(/^\s*Speaker\s+\d+\s*\|\s*\d+:\d+/) && line.trim().length > 50;
+        }).slice(0, 3); // 取前3个关键句子
+        
+        if (keyLines.length > 0) {
+          output += `   关键内容: ${keyLines.join(' ').substring(0, 200)}...\n`;
+        }
+      }
+      output += `   链接: ${podcast.url}\n`;
+    });
+    output += '\n';
+  }
+  
+  // X 推文部分
+  if (tweets && tweets.length > 0) {
+    output += '### X (Twitter) 动态\n';
+    // 按点赞数排序，取前10条热门推文
+    const topTweets = tweets
+      .sort((a, b) => b.likes - a.likes)
+      .slice(0, 10);
+    
+    topTweets.forEach((tweet, i) => {
+      output += `${i + 1}. [@${tweet.handle}]: ${tweet.text}\n`;
+      output += `   链接: ${tweet.url}\n`;
+    });
+    output += '\n';
+  }
+  
+  return output;
 }
 
 // ====== 生成AI摘要 ======
@@ -211,13 +271,18 @@ async function sendToFeishu(content) {
     throw new Error('❌ FEISHU_WEBHOOK 环境变量未设置');
   }
 
+  // 【关键】在消息开头添加关键词
+  // 请将 "[AI日报]" 替换为你在飞书机器人中设置的关键词
+  const keyword = '[AI日报]';
+  const message = `${keyword}\n\n${content}`;
+
   try {
     const response = await axios.post(
       webhook,
       {
         msg_type: 'text',
         content: {
-          text: content
+          text: message
         }
       },
       {
