@@ -1,0 +1,28 @@
+name: AI Digest to Feishu
+
+on:
+  schedule:
+    - cron: "0 15 * * *"   # 每天 UTC 15:00 = 加州 08:00
+  workflow_dispatch:       # 允许手动运行
+
+jobs:
+  run-digest:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉代码
+        uses: actions/checkout@v3
+
+      - name: 安装 Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+
+      - name: 安装依赖
+        run: npm install
+
+      - name: 运行脚本
+        run: node index.js
+        env:
+          FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
+          QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
