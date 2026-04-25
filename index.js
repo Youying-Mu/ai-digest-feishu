@@ -7,11 +7,10 @@ const SOURCES = {
   x: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json"
 };
 
-// ====== 获取信息源数据 ======
+// ====== 获取并解析信息源 ======
 async function fetchSources() {
   console.log('📡 正在获取技术动态信息源...');
   
-  const sourcesData = {};
   const cutoffTime = Date.now() - (48 * 60 * 60 * 1000); // 48小时前
   
   try {
@@ -22,10 +21,10 @@ async function fetchSources() {
       axios.get(SOURCES.x)
     ]);
     
-    // 处理 blogs
-    const recentBlogs = blogsRes.data.items
+    // 处理 blogs - 结构: { items: [...] }
+    const recentBlogs = (blogsRes.data.items || [])
       .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
-      .slice(0, 10) // 取最近10条
+      .slice(0, 10)
       .map(item => ({
         title: item.title,
         link: item.link,
@@ -33,8 +32,8 @@ async function fetchSources() {
         source: 'Blog'
       }));
     
-    // 处理 podcasts
-    const recentPodcasts = podcastsRes.data.items
+    // 处理 podcasts - 结构: { items: [...] }
+    const recentPodcasts = (podcastsRes.data.items || [])
       .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
       .slice(0, 5)
       .map(item => ({
@@ -44,27 +43,33 @@ async function fetchSources() {
         source: 'Podcast'
       }));
     
-    // 处理 X (Twitter)
-    const recentX = xRes.data.items
-      .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
-      .slice(0, 15)
-      .map(item => ({
-        title: item.title,
-        link: item.link,
-        pubDate: item.pubDate,
-        source: 'X'
-      }));
+    // 处理 X - 结构: { x: [{ tweets: [...] }] }
+    const allXTweets = [];
+    if (xRes.data.x && Array.isArray(xRes.data.x)) {
+      xRes.data.x.forEach(user => {
+        if (user.tweets && Array.isArray(user.tweets)) {
+          user.tweets.forEach(tweet => {
+            allXTweets.push({
+              title: `${user.name} (@${user.handle}): ${tweet.text}`,
+              link: tweet.url,
+              pubDate: tweet.createdAt,
+              source: 'X'
+            });
+          });
+        }
+      });
+    }
     
-    sourcesData.blogs = recentBlogs;
-    sourcesData.podcasts = recentPodcasts;
-    sourcesData.x = recentX;
+    const recentX = allXTweets
+      .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
+      .slice(0, 15);
     
     console.log(`✅ 信息源获取成功:`);
     console.log(`   - Blogs: ${recentBlogs.length} 条`);
     console.log(`   - Podcasts: ${recentPodcasts.length} 条`);
     console.log(`   - X: ${recentX.length} 条`);
     
-    return sourcesData;
+    return { blogs: recentBlogs, podcasts: recentPodcasts, x: recentX };
     
   } catch (error) {
     console.error('❌ 获取信息源失败:', error.message);
