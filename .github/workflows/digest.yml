@@ -3,20 +3,20 @@ name: AI Digest
 on:
   schedule:
     - cron: "0 0 * * *"  # UTC 0:00 = 北京时间 8:00
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:  # 👈 这一行必须存在！允许手动触发
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 强制使用 Node.js 24
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   run:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4  # 更新到 v4 版本
+      - uses: actions/checkout@v4
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'  # 指定 Node.js 版本
+          node-version: '20'
       - run: npm install
       - run: node index.js
         env:
