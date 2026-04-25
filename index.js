@@ -17,7 +17,6 @@ async function fetchBlogs() {
     const response = await axios.get(DATA_SOURCES.blogs);
     const data = response.data;
     
-    // 提取博客信息
     const blogs = (data.blogs || []).map(blog => ({
       source: blog.name,
       title: blog.title,
@@ -41,7 +40,6 @@ async function fetchPodcasts() {
     const response = await axios.get(DATA_SOURCES.podcasts);
     const data = response.data;
     
-    // 提取播客信息
     const podcasts = (data.podcasts || []).map(podcast => ({
       source: podcast.name,
       title: podcast.title,
@@ -65,7 +63,6 @@ async function fetchXData() {
     const response = await axios.get(DATA_SOURCES.x);
     const data = response.data;
     
-    // 提取推文信息
     const tweets = [];
     if (data.x && Array.isArray(data.x)) {
       data.x.forEach(user => {
@@ -120,13 +117,11 @@ function formatSourcesForAI(sourcesData) {
   
   let output = '';
   
-  // 博客部分
   if (blogs && blogs.length > 0) {
     output += '### 博客文章\n';
     blogs.forEach((blog, i) => {
       output += `${i + 1}. [${blog.source}] ${blog.title}\n`;
       if (blog.content) {
-        // 截取前200个字符作为摘要
         const summary = blog.content.substring(0, 200).replace(/\n/g, ' ') + (blog.content.length > 200 ? '...' : '');
         output += `   摘要: ${summary}\n`;
       }
@@ -135,18 +130,15 @@ function formatSourcesForAI(sourcesData) {
     output += '\n';
   }
   
-  // 播客部分
   if (podcasts && podcasts.length > 0) {
     output += '### 播客节目\n';
     podcasts.forEach((podcast, i) => {
       output += `${i + 1}. [${podcast.source}] ${podcast.title}\n`;
       if (podcast.transcript) {
-        // 提取播客转录文本的关键内容
         const lines = podcast.transcript.split('\n');
         const keyLines = lines.filter(line => {
-          // 过滤掉时间戳行，保留实际对话内容
           return !line.match(/^\s*Speaker\s+\d+\s*\|\s*\d+:\d+/) && line.trim().length > 50;
-        }).slice(0, 3); // 取前3个关键句子
+        }).slice(0, 3);
         
         if (keyLines.length > 0) {
           output += `   关键内容: ${keyLines.join(' ').substring(0, 200)}...\n`;
@@ -157,10 +149,8 @@ function formatSourcesForAI(sourcesData) {
     output += '\n';
   }
   
-  // X 推文部分
   if (tweets && tweets.length > 0) {
     output += '### X (Twitter) 动态\n';
-    // 按点赞数排序，取前10条热门推文
     const topTweets = tweets
       .sort((a, b) => b.likes - a.likes)
       .slice(0, 10);
@@ -197,7 +187,6 @@ ${sourcesContext}
 4. **字数**：300-500字
 5. **格式**：使用Markdown，包含emoji表情`;
 
-  // 添加重试机制
   const maxRetries = 2;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -213,7 +202,6 @@ ${sourcesContext}
               }
             ]
           },
-          // 【关键】指定返回格式为 message 格式
           parameters: {
             result_format: 'message'
           }
@@ -223,19 +211,16 @@ ${sourcesContext}
             'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
             'Content-Type': 'application/json'
           },
-          timeout: 60000 // 60秒超时
+          timeout: 60000
         }
       );
 
-      // 【修正】检查响应格式
       if (response.data?.output?.choices?.[0]?.message?.content) {
-        // message 格式
         const digest = response.data.output.choices[0].message.content;
         console.log('✅ AI摘要生成成功 (message格式)');
         console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
         return digest;
       } else if (response.data?.output?.text) {
-        // text 格式（备用）
         const digest = response.data.output.text;
         console.log('✅ AI摘要生成成功 (text格式)');
         console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
@@ -256,13 +241,12 @@ ${sourcesContext}
       }
       
       console.log(`⏳ AI生成超时，正在重试 (${attempt + 1}/${maxRetries})...`);
-      // 等待2秒后重试
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   }
 }
 
-// ====== 推送至飞书 ======
+// ====== 推送至飞书（简化版，不使用关键词） ======
 async function sendToFeishu(content) {
   console.log('🚀 正在推送至飞书...');
   
@@ -271,10 +255,8 @@ async function sendToFeishu(content) {
     throw new Error('❌ FEISHU_WEBHOOK 环境变量未设置');
   }
 
-  // 【关键】在消息开头添加关键词
-  // 请将 "[AI日报]" 替换为你在飞书机器人中设置的关键词
-  const keyword = '[AI日报]';
-  const message = `${keyword}\n\n${content}`;
+  // 【关键】不使用关键词，直接发送
+  const message = content;
 
   try {
     const response = await axios.post(
@@ -324,16 +306,9 @@ async function main() {
   console.log('========================================\n');
   
   try {
-    // 1. 获取数据
     const sourcesData = await fetchAllSources();
-    
-    // 2. 生成摘要
     const digest = await generateDigest(sourcesData);
-    
-    // 3. 保存到文件（可选）
     await saveDigestToFile(digest);
-    
-    // 4. 推送至飞书
     await sendToFeishu(digest);
     
     console.log('\n========================================');
