@@ -65,7 +65,7 @@ async function callQwen(prompt) {
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.QWEN_API_KEY}`,
+          Authorization: `Bearer ${process.env.DASHSCOPE_API_KEY}`,
           "Content-Type": "application/json",
         },
         timeout: 30000,
