@@ -29,7 +29,6 @@ async function fetchTweets() {
   console.log('🐦 正在获取 X 推文...');
   
   // 模拟数据（实际项目中这里应该调用 Twitter API）
-  // 由于 Twitter API 需要认证，这里先用模拟数据演示
   const mockTweets = [
     { user: 'OpenAI', text: '我们发布了新的 GPT-4.5 模型，性能提升 30%' },
     { user: 'GoogleAI', text: 'Gemini 2.0 正式上线，支持多模态推理' },
@@ -153,6 +152,10 @@ ${sourcesContext}
                 content: prompt
               }
             ]
+          },
+          // 【关键】指定返回格式为 message 格式
+          parameters: {
+            result_format: 'message'
           }
         },
         {
@@ -164,15 +167,24 @@ ${sourcesContext}
         }
       );
 
-      if (!response.data?.output?.choices?.[0]?.message?.content) {
-        throw new Error('API响应格式不正确');
+      // 【修正】检查响应格式
+      if (response.data?.output?.choices?.[0]?.message?.content) {
+        // message 格式
+        const digest = response.data.output.choices[0].message.content;
+        console.log('✅ AI摘要生成成功 (message格式)');
+        console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
+        return digest;
+      } else if (response.data?.output?.text) {
+        // text 格式（备用）
+        const digest = response.data.output.text;
+        console.log('✅ AI摘要生成成功 (text格式)');
+        console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
+        return digest;
+      } else {
+        console.error('❌ API响应格式不正确');
+        console.error('完整响应:', JSON.stringify(response.data, null, 2));
+        throw new Error('无法解析API响应');
       }
-
-      const digest = response.data.output.choices[0].message.content;
-      console.log('✅ AI摘要生成成功');
-      console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
-      
-      return digest;
       
     } catch (error) {
       if (attempt === maxRetries) {
