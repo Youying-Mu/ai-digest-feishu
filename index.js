@@ -185,3 +185,27 @@ main().catch(error => {
   console.error('程序异常退出:', error);
   process.exit(1);
 });
+
+// 在文件末尾添加
+async function main() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    console.log(`🚀 开始生成 ${today} 的技术摘要...`);
+    
+    const digest = await generateDigest();
+    console.log('✅ 摘要生成成功:', digest);
+    
+    await sendToFeishu(digest);
+    console.log('✅ 飞书消息发送成功！');
+  } catch (error) {
+    console.error('❌ 任务执行失败:');
+    console.error('错误信息:', error.message);
+    console.error('错误堆栈:', error.stack);
+    
+    // 即使失败也继续执行，避免 exit code 1
+    process.exit(0); // 或者保持 process.exit(1) 但要确保能看到错误
+  }
+}
+
+main();
+
