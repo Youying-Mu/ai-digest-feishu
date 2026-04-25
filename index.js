@@ -1,58 +1,137 @@
 const axios = require('axios');
-const { v4: uuidv4 } = require('uuid');
 
-// ====== 核心函数：生成AI技术摘要 ======
-async function generateDigest() {
+// ====== 信息源配置 ======
+const SOURCES = {
+  blogs: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json",
+  podcasts: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json",
+  x: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json"
+};
+
+// ====== 获取信息源数据 ======
+async function fetchSources() {
+  console.log('📡 正在获取技术动态信息源...');
+  
+  const sourcesData = {};
+  const cutoffTime = Date.now() - (48 * 60 * 60 * 1000); // 48小时前
+  
+  try {
+    // 并行获取所有源
+    const [blogsRes, podcastsRes, xRes] = await Promise.all([
+      axios.get(SOURCES.blogs),
+      axios.get(SOURCES.podcasts),
+      axios.get(SOURCES.x)
+    ]);
+    
+    // 处理 blogs
+    const recentBlogs = blogsRes.data.items
+      .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
+      .slice(0, 10) // 取最近10条
+      .map(item => ({
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        source: 'Blog'
+      }));
+    
+    // 处理 podcasts
+    const recentPodcasts = podcastsRes.data.items
+      .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
+      .slice(0, 5)
+      .map(item => ({
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        source: 'Podcast'
+      }));
+    
+    // 处理 X (Twitter)
+    const recentX = xRes.data.items
+      .filter(item => new Date(item.pubDate).getTime() > cutoffTime)
+      .slice(0, 15)
+      .map(item => ({
+        title: item.title,
+        link: item.link,
+        pubDate: item.pubDate,
+        source: 'X'
+      }));
+    
+    sourcesData.blogs = recentBlogs;
+    sourcesData.podcasts = recentPodcasts;
+    sourcesData.x = recentX;
+    
+    console.log(`✅ 信息源获取成功:`);
+    console.log(`   - Blogs: ${recentBlogs.length} 条`);
+    console.log(`   - Podcasts: ${recentPodcasts.length} 条`);
+    console.log(`   - X: ${recentX.length} 条`);
+    
+    return sourcesData;
+    
+  } catch (error) {
+    console.error('❌ 获取信息源失败:', error.message);
+    throw error;
+  }
+}
+
+// ====== 格式化信息源内容 ======
+function formatSourcesForAI(sourcesData) {
+  let content = `以下是最近48小时内的AI技术动态：\n\n`;
+  
+  // Blogs
+  if (sourcesData.blogs.length > 0) {
+    content += `## 🔥 技术博客更新 (${sourcesData.blogs.length} 篇)\n`;
+    sourcesData.blogs.forEach((item, index) => {
+      const date = new Date(item.pubDate).toLocaleDateString('zh-CN');
+      content += `${index + 1}. [${item.title}](${item.link}) - ${date}\n`;
+    });
+    content += '\n';
+  }
+  
+  // Podcasts
+  if (sourcesData.podcasts.length > 0) {
+    content += `## 🎙️ 播客更新 (${sourcesData.podcasts.length} 期)\n`;
+    sourcesData.podcasts.forEach((item, index) => {
+      const date = new Date(item.pubDate).toLocaleDateString('zh-CN');
+      content += `${index + 1}. [${item.title}](${item.link}) - ${date}\n`;
+    });
+    content += '\n';
+  }
+  
+  // X (Twitter)
+  if (sourcesData.x.length > 0) {
+    content += `## 🐦 X/Twitter 动态 (${sourcesData.x.length} 条)\n`;
+    sourcesData.x.forEach((item, index) => {
+      const date = new Date(item.pubDate).toLocaleDateString('zh-CN');
+      content += `${index + 1}. ${item.title} - ${date}\n`;
+    });
+    content += '\n';
+  }
+  
+  return content;
+}
+
+// ====== 生成AI摘要 ======
+async function generateDigest(sourcesData) {
   console.log('🧠 正在调用AI模型生成技术摘要...');
   
   const today = new Date().toISOString().split('T')[0];
-  const currentDate = new Date().toLocaleDateString('zh-CN', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    weekday: 'long'
-  });
+  const sourcesContext = formatSourcesForAI(sourcesData);
+  
+  const prompt = `你是一位资深AI技术专家，请基于以下真实的技术动态，为${today}生成一份专业的AI技术每日摘要。
 
-  // 构建提示词
-  const prompt = `你是一位资深AI技术专家，请为${currentDate}生成一份专业的AI技术每日摘要。要求：
+${sourcesContext}
 
-1. **时效性**：重点关注最近24-48小时内的AI技术动态
-2. **专业性**：包含技术细节，避免泛泛而谈
-3. **结构化**：按以下格式组织：
-
-## 🚀 今日AI技术摘要 - ${today}
-
-### 🔥 热点技术
-- [技术名称]：简要描述技术突破和应用场景
-- [技术名称]：简要描述技术突破和应用场景
-
-### 💡 研究突破
-- [论文/项目名称]：核心贡献和技术亮点
-- [论文/项目名称]：核心贡献和技术亮点
-
-### 🏢 产业动态
-- [公司名称]：重要产品发布或技术进展
-- [公司名称]：重要产品发布或技术进展
-
-### 📊 技术趋势
-- [趋势名称]：当前发展状况和未来预测
-- [趋势名称]：当前发展状况和未来预测
-
-### 🎯 开发者建议
-- [具体建议]：针对开发者的实用技术建议
-- [具体建议]：针对开发者的实用技术建议
-
-4. **语言**：使用简体中文，专业但易懂
-5. **字数**：300-500字，信息密度高
-6. **避免**：广告、营销内容、重复信息`;
+## 生成要求：
+1. **基于事实**：只总结上面提供的真实内容，不要编造
+2. **结构化输出**：
+   - 热点技术（从blogs和X中提取重要技术突破）
+   - 研究突破（从blogs中提取论文/项目）
+   - 产业动态（从X和blogs中提取公司动态）
+   - 开发者建议（基于内容给出实用建议）
+3. **语言**：简体中文，专业但易懂
+4. **字数**：300-500字
+5. **格式**：使用Markdown，包含emoji表情`;
 
   try {
-    // 检查 API 密钥
-    if (!process.env.DASHSCOPE_API_KEY) {
-      throw new Error('DASHSCOPE_API_KEY 环境变量未设置');
-    }
-
-    // 调用DashScope API
     const response = await axios.post(
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
       {
@@ -60,119 +139,67 @@ async function generateDigest() {
         input: {
           messages: [
             {
-              role: 'system',
-              content: '你是一位专业的AI技术分析师，专注于生成高质量的技术摘要。'
-            },
-            {
               role: 'user',
               content: prompt
             }
           ]
-        },
-        parameters: {
-          result_format: 'message'
         }
       },
       {
         headers: {
           'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
-          'Content-Type': 'application/json',
-          'X-DashScope-Plugin': 'header-uuid-plugin',
-          'X-Request-Id': uuidv4() // 添加唯一请求ID
+          'Content-Type': 'application/json'
         },
-        timeout: 30000 // 30秒超时
+        timeout: 30000
       }
     );
 
-    // 提取生成的摘要内容
     if (!response.data?.output?.choices?.[0]?.message?.content) {
-      throw new Error('API响应格式不正确，缺少生成内容');
+      throw new Error('API响应格式不正确');
     }
 
-    const content = response.data.output.choices[0].message.content;
+    const digest = response.data.output.choices[0].message.content;
     console.log('✅ AI摘要生成成功');
-    console.log('📋 摘要预览:', content.substring(0, 100) + '...');
+    console.log('📋 摘要预览:', digest.substring(0, 100) + '...');
     
-    // 清理和格式化内容
-    return content.trim().replace(/\n{3,}/g, '\n\n');
+    return digest;
     
   } catch (error) {
-    console.error('❌ AI生成失败:');
+    console.error('❌ AI生成失败:', error.message);
     if (error.response) {
-      console.error('API响应状态:', error.response.status);
-      console.error('API响应数据:', JSON.stringify(error.response.data, null, 2));
-      
-      // 处理常见错误
-      if (error.response.status === 401) {
-        throw new Error('DashScope API密钥无效或过期');
-      } else if (error.response.status === 429) {
-        throw new Error('API调用频率限制，请稍后重试');
-      } else if (error.response.status === 400) {
-        throw new Error('请求参数错误，请检查prompt格式');
-      }
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('API请求超时，请检查网络连接');
+      console.error('API响应:', JSON.stringify(error.response.data, null, 2));
     }
-    console.error('错误详情:', error.message);
     throw error;
   }
 }
 
-// ====== 飞书推送函数 ======
+// ====== 飞书推送 ======
 async function sendToFeishu(content) {
   console.log('📤 准备发送到飞书...');
   
-  // 检查环境变量
-  if (!process.env.FEISHU_WEBHOOK) {
-    console.error('🚨 错误: FEISHU_WEBHOOK 环境变量未设置！');
-    throw new Error('FEISHU_WEBHOOK 环境变量缺失');
-  }
-
   const webhookUrl = process.env.FEISHU_WEBHOOK;
-  console.log('📡 发送请求到:', webhookUrl.substring(0, 40) + '...');
-
-  // 验证 webhook URL 格式
-  if (!webhookUrl.startsWith('https://open.feishu.cn/open-apis/bot/v2/hook/')) {
-    throw new Error('飞书 webhook URL 格式不正确');
-  }
-
+  
   try {
+    // 🔑 关键：在消息开头添加关键词 "AI"
+    const messageWithKeyword = `AI\n\n${content}`;
+    
     const response = await axios.post(webhookUrl, {
-      msg_type: "interactive",
-      card: {
-        config: { wide_screen_mode: true },
-        header: { 
-          title: { content: "🚀 每日AI技术摘要", tag: "plain_text" }, 
-          template: "blue" 
-        },
-        elements: [{ 
-          tag: "markdown", 
-          content: content.substring(0, 4000) // 飞书消息长度限制
-        }]
+      msg_type: "text",
+      content: {
+        text: messageWithKeyword
       }
     }, {
-      timeout: 10000 // 10秒超时
+      timeout: 10000
     });
-    
-    console.log('✅ 飞书响应状态:', response.status);
-    console.log('📋 飞书响应数据:', JSON.stringify(response.data, null, 2));
     
     if (response.data.code === 0) {
       console.log('🎉 飞书消息发送成功！');
       return true;
     } else {
-      console.error('❌ 飞书API返回错误:', response.data.msg);
       throw new Error(`飞书API错误: ${response.data.msg}`);
     }
   } catch (error) {
-    console.error('🔥 发送到飞书时出错:');
-    console.error('错误消息:', error.message);
-    if (error.response) {
-      console.error('响应状态:', error.response.status);
-      console.error('响应数据:', JSON.stringify(error.response.data, null, 2));
-    } else if (error.code === 'ECONNABORTED') {
-      throw new Error('飞书API请求超时');
-    }
+    console.error('🔥 飞书推送失败:', error.message);
     throw error;
   }
 }
@@ -180,46 +207,29 @@ async function sendToFeishu(content) {
 // ====== 主函数 ======
 async function main() {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    console.log(`🚀 开始生成 ${today} 的技术摘要...`);
+    console.log('🚀 开始生成AI技术摘要...\n');
     
-    // 1. 生成摘要
-    const digest = await generateDigest();
+    // 1. 获取信息源
+    const sourcesData = await fetchSources();
     
-    // 2. 发送到飞书
+    // 2. 生成摘要
+    const digest = await generateDigest(sourcesData);
+    
+    // 3. 发送到飞书
     await sendToFeishu(digest);
     
-    console.log('✅ 任务执行成功！');
+    console.log('\n✅ 任务执行成功！');
     process.exit(0);
     
   } catch (error) {
-    console.error('❌ 任务执行失败:');
-    console.error('错误信息:', error.message);
-    console.error('错误堆栈:', error.stack);
-    
-    // 即使失败也发送错误通知到飞书（可选）
-    try {
-      if (process.env.FEISHU_WEBHOOK) {
-        const errorMessage = `🚨 **任务执行失败**\n\n**错误信息:** ${error.message}\n\n**时间:** ${new Date().toLocaleString('zh-CN')}\n\n**摘要日期:** ${new Date().toISOString().split('T')[0]}`;
-        await sendToFeishu(errorMessage);
-        console.log('✅ 错误通知已发送到飞书');
-      }
-    } catch (notifyError) {
-      console.error('❌ 发送错误通知失败:', notifyError.message);
-    }
-    
+    console.error('\n❌ 任务执行失败:', error.message);
     process.exit(1);
   }
 }
 
-// 启动主函数
-console.log('🔧 开始执行AI Digest工作流...');
-console.log('📋 配置检查:');
-console.log(`   FEISHU_WEBHOOK: ${process.env.FEISHU_WEBHOOK ? '✅ 已设置' : '❌ 未设置'}`);
-console.log(`   DASHSCOPE_API_KEY: ${process.env.DASHSCOPE_API_KEY ? '✅ 已设置' : '❌ 未设置'}`);
-console.log(`   Node.js 版本: ${process.version}`);
+// 启动
+console.log('🔧 AI Digest 工作流启动');
+console.log(`📅 日期: ${new Date().toISOString().split('T')[0]}`);
+console.log(`⚙️  Node.js 版本: ${process.version}\n`);
 
-main().catch(error => {
-  console.error('❌ 未捕获的异常:', error.message);
-  process.exit(1);
-});
+main();
