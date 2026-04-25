@@ -1,28 +1,24 @@
-name: AI Digest to Feishu
+name: AI Digest
 
 on:
   schedule:
-    - cron: "0 15 * * *"   # 每天 UTC 15:00 = 加州 08:00
-  workflow_dispatch:       # 允许手动运行
+    - cron: "0 0 * * *"  # UTC 0:00 = 北京时间 8:00
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 强制使用 Node.js 24
 
 jobs:
-  run-digest:
+  run:
     runs-on: ubuntu-latest
-
     steps:
-      - name: 拉代码
-        uses: actions/checkout@v3
-
-      - name: 安装 Node
-        uses: actions/setup-node@v3
+      - uses: actions/checkout@v4  # 更新到 v4 版本
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          node-version: "18"
-
-      - name: 安装依赖
-        run: npm install
-
-      - name: 运行脚本
-        run: node index.js
+          node-version: '20'  # 指定 Node.js 版本
+      - run: npm install
+      - run: node index.js
         env:
           FEISHU_WEBHOOK: ${{ secrets.FEISHU_WEBHOOK }}
           QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
