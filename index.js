@@ -89,4 +89,137 @@ async function generateDigest() {
       throw new Error('API响应格式不正确，缺少生成内容');
     }
 
-    const content
+    const content = response.data.output.choices[0].message.content;
+    console.log('✅ AI摘要生成成功');
+    console.log('📋 摘要预览:', content.substring(0, 100) + '...');
+    
+    // 清理和格式化内容
+    return content.trim().replace(/\n{3,}/g, '\n\n');
+    
+  } catch (error) {
+    console.error('❌ AI生成失败:');
+    if (error.response) {
+      console.error('API响应状态:', error.response.status);
+      console.error('API响应数据:', JSON.stringify(error.response.data, null, 2));
+      
+      // 处理常见错误
+      if (error.response.status === 401) {
+        throw new Error('DashScope API密钥无效或过期');
+      } else if (error.response.status === 429) {
+        throw new Error('API调用频率限制，请稍后重试');
+      } else if (error.response.status === 400) {
+        throw new Error('请求参数错误，请检查prompt格式');
+      }
+    } else if (error.code === 'ECONNABORTED') {
+      throw new Error('API请求超时，请检查网络连接');
+    }
+    console.error('错误详情:', error.message);
+    throw error;
+  }
+}
+
+// ====== 飞书推送函数 ======
+async function sendToFeishu(content) {
+  console.log('📤 准备发送到飞书...');
+  
+  // 检查环境变量
+  if (!process.env.FEISHU_WEBHOOK) {
+    console.error('🚨 错误: FEISHU_WEBHOOK 环境变量未设置！');
+    throw new Error('FEISHU_WEBHOOK 环境变量缺失');
+  }
+
+  const webhookUrl = process.env.FEISHU_WEBHOOK;
+  console.log('📡 发送请求到:', webhookUrl.substring(0, 40) + '...');
+
+  // 验证 webhook URL 格式
+  if (!webhookUrl.startsWith('https://open.feishu.cn/open-apis/bot/v2/hook/')) {
+    throw new Error('飞书 webhook URL 格式不正确');
+  }
+
+  try {
+    const response = await axios.post(webhookUrl, {
+      msg_type: "interactive",
+      card: {
+        config: { wide_screen_mode: true },
+        header: { 
+          title: { content: "🚀 每日AI技术摘要", tag: "plain_text" }, 
+          template: "blue" 
+        },
+        elements: [{ 
+          tag: "markdown", 
+          content: content.substring(0, 4000) // 飞书消息长度限制
+        }]
+      }
+    }, {
+      timeout: 10000 // 10秒超时
+    });
+    
+    console.log('✅ 飞书响应状态:', response.status);
+    console.log('📋 飞书响应数据:', JSON.stringify(response.data, null, 2));
+    
+    if (response.data.code === 0) {
+      console.log('🎉 飞书消息发送成功！');
+      return true;
+    } else {
+      console.error('❌ 飞书API返回错误:', response.data.msg);
+      throw new Error(`飞书API错误: ${response.data.msg}`);
+    }
+  } catch (error) {
+    console.error('🔥 发送到飞书时出错:');
+    console.error('错误消息:', error.message);
+    if (error.response) {
+      console.error('响应状态:', error.response.status);
+      console.error('响应数据:', JSON.stringify(error.response.data, null, 2));
+    } else if (error.code === 'ECONNABORTED') {
+      throw new Error('飞书API请求超时');
+    }
+    throw error;
+  }
+}
+
+// ====== 主函数 ======
+async function main() {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    console.log(`🚀 开始生成 ${today} 的技术摘要...`);
+    
+    // 1. 生成摘要
+    const digest = await generateDigest();
+    
+    // 2. 发送到飞书
+    await sendToFeishu(digest);
+    
+    console.log('✅ 任务执行成功！');
+    process.exit(0);
+    
+  } catch (error) {
+    console.error('❌ 任务执行失败:');
+    console.error('错误信息:', error.message);
+    console.error('错误堆栈:', error.stack);
+    
+    // 即使失败也发送错误通知到飞书（可选）
+    try {
+      if (process.env.FEISHU_WEBHOOK) {
+        const errorMessage = `🚨 **任务执行失败**\n\n**错误信息:** ${error.message}\n\n**时间:** ${new Date().toLocaleString('zh-CN')}\n\n**摘要日期:** ${new Date().toISOString().split('T')[0]}`;
+        await sendToFeishu(errorMessage);
+        console.log('✅ 错误通知已发送到飞书');
+      }
+    } catch (notifyError) {
+      console.error('❌ 发送错误通知失败:', notifyError.message);
+    }
+    
+    process.exit(1);
+  }
+}
+
+// 启动主函数
+console.log('🔧 开始执行AI Digest工作流...');
+console.log('📋 配置检查:');
+console.log(`   FEISHU_WEBHOOK: ${process.env.FEISHU_WEBHOOK ? '✅ 已设置' : '❌ 未设置'}`);
+console.log(`   DASHSCOPE_API_KEY: ${process.env.DASHSCOPE_API_KEY ? '✅ 已设置' : '❌ 未设置'}`);
+console.log(`   Node.js 版本: ${process.version}`);
+
+main().catch(error => {
+  console.error('❌ 未捕获的异常:', error.message);
+  process.exit(1);
+});
