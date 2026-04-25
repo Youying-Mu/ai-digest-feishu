@@ -3,10 +3,7 @@ name: AI Digest
 on:
   schedule:
     - cron: "0 0 * * *"  # UTC 0:00 = 北京时间 8:00
-  workflow_dispatch:  # 👈 这一行必须存在！允许手动触发
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  workflow_dispatch:
 
 jobs:
   run:
@@ -16,7 +13,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'  # 👈 关键修改：从 '20' 改为 '24'
       - run: npm install
       - run: node index.js
         env:
