@@ -433,4 +433,96 @@ async function sendToFeishu(content, sourcesData) {
         tag: 'note',
         elements: [
           {
-            tag: 'plain_tex
+            tag: 'plain_text',
+            content: `✅ 3条深度分析 + ${summarySources.length}条新信息 | ${new Date().toLocaleTimeString('zh-CN', {hour12: false})} | 北京时间08:00推送`
+          }
+        ]
+      }
+    ]
+  };
+
+  try {
+    const response = await axios.post(
+      webhook,
+      {
+        msg_type: 'interactive',
+        card: cardContent
+      },
+      {
+        headers: { 
+          'Content-Type': 'application/json',
+          'User-Agent': 'AI-Tech-Insight-TrueUpdate'
+        },
+        timeout: 20000
+      }
+    );
+
+    if (response.data?.code === 0) {
+      console.log('✅ 完整洞察简报已成功发送至飞书！');
+      return true;
+    } else {
+      console.error('❌ 飞书API返回错误:', response.data);
+      throw new Error('飞书API错误');
+    }
+  } catch (error) {
+    console.error('❌ 飞书推送失败:', error.message);
+    throw error;
+  }
+}
+
+// ====== 保存摘要到文件 ======
+async function saveDigestToFile(content, sourcesData) {
+  try {
+    const filename = `digest_${new Date().toISOString().split('T')[0]}_true_new.md`;
+    
+    const { deepAnalysisSources, summarySources } = sourcesData;
+    const metadata = `# AI技术洞察摘要\n生成时间: ${new Date().toISOString()}\n深度分析条数: ${deepAnalysisSources.length}\n其他新信息条数: ${summarySources.length}\n总新增信息: ${sourcesData.totalNew}\n`;
+    
+    const fullContent = `${metadata}\n${'='.repeat(80)}\n\n${content}`;
+    
+    await fs.writeFile(filename, fullContent, 'utf-8');
+    console.log(`💾 完整洞察已保存到文件: ${filename}`);
+  } catch (error) {
+    console.error('❌ 保存文件失败:', error.message);
+  }
+}
+
+// ====== 主流程 ======
+async function main() {
+  console.log('========================================');
+  console.log('🚀 AI完整洞察简报 - 真实增量更新版');
+  console.log('========================================\n');
+  
+  try {
+    // 1. 获取数据（带真实增量检测）
+    const sourcesData = await fetchAllSources();
+    
+    // 如果没有新信息，跳过处理
+    if (!sourcesData) {
+      console.log('✅ 今日无新信息，任务结束');
+      return;
+    }
+    
+    // 2. 生成完整深度解析
+    const digest = await generateDigest(sourcesData);
+    
+    // 3. 保存到文件
+    await saveDigestToFile(digest, sourcesData);
+    
+    // 4. 推送至飞书
+    await sendToFeishu(digest, sourcesData);
+    
+    console.log('\n========================================');
+    console.log('✅ 全部任务成功完成！');
+    console.log('========================================');
+    
+  } catch (error) {
+    console.error('\n========================================');
+    console.error('❌ 任务失败:', error.message);
+    console.error('========================================');
+    process.exit(1);
+  }
+}
+
+// ====== 启动程序 ======
+main();
