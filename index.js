@@ -23,7 +23,7 @@ async function readCache() {
     return { 
       lastProcessed: { 
         timestamp: null, 
-        urlWithMetadata: {} // 存储URL和其元数据
+        urlWithMetadata: {}
       } 
     };
   }
@@ -53,7 +53,7 @@ async function fetchBlogs() {
       source: blog.name,
       url: blog.url,
       content: blog.content || blog.description || '',
-      timestamp: new Date().toISOString(), // 这里应该是文章的实际发布时间
+      timestamp: blog.timestamp || new Date().toISOString(),
       weight: 12
     }));
     
@@ -79,7 +79,7 @@ async function fetchPodcasts() {
       source: podcast.name,
       url: podcast.url,
       transcript: podcast.transcript || '',
-      timestamp: new Date().toISOString(), // 实际播客发布时间
+      timestamp: podcast.timestamp || new Date().toISOString(),
       weight: 10
     }));
     
@@ -113,7 +113,7 @@ async function fetchXData() {
               content: tweet.text,
               likes: tweet.likes || 0,
               retweets: tweet.retweets || 0,
-              timestamp: tweet.timestamp || new Date().toISOString(), // 使用推文实际时间
+              timestamp: tweet.timestamp || new Date().toISOString(),
               weight: 6 + engagementWeight
             });
           });
@@ -141,11 +141,10 @@ function findTrulyNewSources(allSources, cachedMetadata) {
       // 完全新内容
       trulyNewSources.push({ ...source, isNew: true });
     } else {
-      // 检查是否内容有更新（这里简化处理，实际可能需要更复杂的对比）
+      // 检查是否内容有更新
       const currentTime = new Date(source.timestamp);
       const cachedTime = new Date(cachedInfo.timestamp);
       
-      // 如果内容发布时间比缓存时间新，则认为是新内容
       if (currentTime > cachedTime) {
         trulyNewSources.push({ ...source, isNew: true });
       }
@@ -234,7 +233,7 @@ async function fetchAllSources() {
     
     if (trulyNewSources.length === 0) {
       console.log('✅ 今日无真正新信息，跳过处理');
-      return null; // 跳过本次处理
+      return null;
     }
     
     // 智能选择最重要的3条进行深度分析
@@ -247,7 +246,7 @@ async function fetchAllSources() {
     
     console.log(`📋 其他新信息数量: ${summarySources.length} 条`);
     
-    // 更新缓存：记录所有新处理的内容
+    // 更新缓存
     const updatedMetadata = { ...cachedMetadata };
     [...deepAnalysisSources, ...summarySources].forEach(source => {
       updatedMetadata[source.url] = {
@@ -276,20 +275,20 @@ async function fetchAllSources() {
   }
 }
 
-// ====== 生成AI摘要 ======
+// ====== 生成AI摘要（严格格式化版） ======
 async function generateDigest(sourcesData) {
-  console.log('🧠 正在生成完整深度解析...');
+  console.log('🧠 正在生成严格格式化深度解析...');
   
   const today = new Date().toISOString().split('T')[0];
   const { deepAnalysisSources, summarySources } = sourcesData;
   
-  let context = `## ${today} AI技术完整洞察（今日新增${sourcesData.totalNew}条）\n\n`;
+  // 构建上下文
+  let context = `## ${today} AI技术严格格式化洞察（今日新增${sourcesData.totalNew}条）\n\n`;
   
   // 深度分析的3条信息
   context += '### 🔍 深度分析（3条最重要新信息）\n';
   deepAnalysisSources.forEach((source, i) => {
-    context += `\n#### 信息 ${i + 1}\n`;
-    context += `**类型**: ${source.type === 'blog' ? '技术博客' : source.type === 'podcast' ? '行业播客' : '产品发布'}\n`;
+    context += `\n#### 深度分析 ${i + 1}\n`;
     context += `**标题**: ${source.title}\n`;
     context += `**链接**: ${source.url}\n`;
     context += `**来源**: ${source.source}\n`;
@@ -305,44 +304,51 @@ async function generateDigest(sourcesData) {
   if (summarySources.length > 0) {
     context += `\n### 📋 其他新信息（共 ${summarySources.length} 条）\n`;
     summarySources.forEach((source, i) => {
-      context += `\n#### 信息 ${i + 1}\n`;
-      context += `**类型**: ${source.type === 'blog' ? '技术博客' : source.type === 'podcast' ? '行业播客' : '产品动态'}\n`;
+      context += `\n#### 其他信息 ${i + 1}\n`;
       context += `**标题**: ${source.title}\n`;
       context += `**链接**: ${source.url}\n`;
       context += `**来源**: ${source.source}\n`;
     });
   }
   
-  const prompt = `你是一位资深AI技术产品专家，每日为技术决策者提供完整洞察。请基于${today}的新信息，严格按以下要求生成洞察：
+  // 【关键】严格按照你要求的格式
+  const prompt = `你是一位资深AI技术产品专家，每日为技术决策者提供严格格式化的洞察。请基于${today}的新信息，严格按以下要求生成洞察：
 
 ${context}
 
 ## 严格要求：
-1. **深度分析3条**：对最重要的3条新信息，每条必须包含：
-   📌 一句话概述
-   🔗 完整URL
-   💎 核心价值
-   🎯 技术边界分析（具体效果数字+技术限制+新API）
-   💡 产品洞见（解决痛点+目标用户+交互革新+1个主要竞品对比）
+1. **深度分析3条**：对最重要的3条新信息，**每条必须严格按照以下5个模块顺序输出**：
+   - 信息一句话概述
+   - 呈现完整URL  
+   - 核心价值
+   - 技术边界分析（效果、技术限制、新API）
+   - 产品洞见（解决痛点、用户定位、交互革新、竞品对比分析）
    **每条总字数严格控制在250字以内**
 
-2. **其他所有新信息**：对剩余的${summarySources.length}条新信息，**每条都必须显示**，格式为：
-   📌 一句话概述
-   🔗 完整URL   
-   💎 核心价值
-   **每条严格控制在40字以内**
+2. **其他所有新信息**：对剩余的${summarySources.length}条新信息，**每条必须严格按照以下3个模块顺序输出**：
+   - 信息一句话概述
+   - 呈现完整URL
+   - 核心价值
+   **每条严格控制在60字以内**
 
 3. **最后**：
    ❓ 1道思考题（30字以内）
 
-4. **整体要求**：
+4. **格式要求**：
+   - 严格按照上述模块顺序，不能打乱
+   - 使用 📌 🔗 💎 🎯 💡 符号标记各模块
+   - 深度分析部分：每个模块一行
+   - 其他信息部分：概述+URL+价值在同一行
+   - 语言精练专业，避免废话
+
+5. **内容要求**：
    - 用具体数字和场景，避免模糊描述
-   - 技术分析用自然语言，避免代码细节
-   - 产品分析突出差异化和用户价值
-   - 语言精练专业，删除所有废话
+   - 技术分析突出效果数据
+   - 产品分析强调差异化价值
+
+6. **整体要求**：
    - **总字数严格控制在1200字以内**
-   - 不要包含"原始信息源"、"数据来源"等无关内容
-   - 确保所有${summarySources.length}条其他新信息都被完整呈现`;
+   - 不要包含"原始信息源"、"数据来源"等无关内容`;
 
   try {
     const response = await axios.post(
@@ -372,7 +378,7 @@ ${context}
 
     if (response.data?.output?.choices?.[0]?.message?.content) {
       const digest = response.data.output.choices[0].message.content;
-      console.log('✅ 完整洞察生成成功');
+      console.log('✅ 严格格式化洞察生成成功');
       
       const charCount = digest.replace(/\s+/g, '').length;
       console.log(`📊 生成内容: ${charCount}字符`);
@@ -413,10 +419,10 @@ async function sendToFeishu(content, sourcesData) {
     },
     header: {
       title: {
-        content: `AI完整洞察 | ${currentDate} (新增${sourcesData.totalNew}条)`,
+        content: `AI严格格式化洞察 | ${currentDate} (新增${sourcesData.totalNew}条)`,
         tag: 'plain_text'
       },
-      template: 'blue'  // 蓝色，表示更新
+      template: 'orange'  // 橙色，表示格式化
     },
     elements: [
       {
@@ -434,7 +440,7 @@ async function sendToFeishu(content, sourcesData) {
         elements: [
           {
             tag: 'plain_text',
-            content: `✅ 3条深度分析 + ${summarySources.length}条新信息 | ${new Date().toLocaleTimeString('zh-CN', {hour12: false})} | 北京时间08:00推送`
+            content: `✅ 3条深度(5模块) + ${summarySources.length}条其他(3模块) | 北京时间08:00推送`
           }
         ]
       }
@@ -451,14 +457,14 @@ async function sendToFeishu(content, sourcesData) {
       {
         headers: { 
           'Content-Type': 'application/json',
-          'User-Agent': 'AI-Tech-Insight-TrueUpdate'
+          'User-Agent': 'AI-Tech-Insight-StrictFormat'
         },
         timeout: 20000
       }
     );
 
     if (response.data?.code === 0) {
-      console.log('✅ 完整洞察简报已成功发送至飞书！');
+      console.log('✅ 严格格式化洞察简报已成功发送至飞书！');
       return true;
     } else {
       console.error('❌ 飞书API返回错误:', response.data);
@@ -473,15 +479,15 @@ async function sendToFeishu(content, sourcesData) {
 // ====== 保存摘要到文件 ======
 async function saveDigestToFile(content, sourcesData) {
   try {
-    const filename = `digest_${new Date().toISOString().split('T')[0]}_true_new.md`;
+    const filename = `digest_${new Date().toISOString().split('T')[0]}_strict_format.md`;
     
     const { deepAnalysisSources, summarySources } = sourcesData;
-    const metadata = `# AI技术洞察摘要\n生成时间: ${new Date().toISOString()}\n深度分析条数: ${deepAnalysisSources.length}\n其他新信息条数: ${summarySources.length}\n总新增信息: ${sourcesData.totalNew}\n`;
+    const metadata = `# AI技术严格格式化洞察摘要\n生成时间: ${new Date().toISOString()}\n深度分析条数: ${deepAnalysisSources.length}\n其他新信息条数: ${summarySources.length}\n总新增信息: ${sourcesData.totalNew}\n格式: 深度分析(5模块) + 其他信息(3模块)\n`;
     
     const fullContent = `${metadata}\n${'='.repeat(80)}\n\n${content}`;
     
     await fs.writeFile(filename, fullContent, 'utf-8');
-    console.log(`💾 完整洞察已保存到文件: ${filename}`);
+    console.log(`💾 严格格式化洞察已保存到文件: ${filename}`);
   } catch (error) {
     console.error('❌ 保存文件失败:', error.message);
   }
@@ -490,7 +496,7 @@ async function saveDigestToFile(content, sourcesData) {
 // ====== 主流程 ======
 async function main() {
   console.log('========================================');
-  console.log('🚀 AI完整洞察简报 - 真实增量更新版');
+  console.log('🚀 AI严格格式化洞察简报 - 精确版');
   console.log('========================================\n');
   
   try {
@@ -503,7 +509,7 @@ async function main() {
       return;
     }
     
-    // 2. 生成完整深度解析
+    // 2. 生成严格格式化深度解析
     const digest = await generateDigest(sourcesData);
     
     // 3. 保存到文件
