@@ -1,8 +1,9 @@
+# ai-digest-feishu/.github/workflows/digest.yml
 name: AI Digest
 
 on:
   schedule:
-    - cron: '0 0 * * *'  # 北京时间 08:00
+    - cron: '30 8 * * *'  # UTC 8:30 = 北京时间 16:30
   workflow_dispatch:
 
 # 👇 关键：在顶层设置环境变量
@@ -15,6 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+      - name: Clean cache (ensure fresh start daily)
+        run: |
+          rm -f cache.json || echo "cache.json not found"
+          echo "Cache cleared for fresh run"
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
