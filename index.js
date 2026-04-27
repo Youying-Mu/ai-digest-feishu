@@ -1,25 +1,44 @@
-// ====== 依赖导入 ======
+// ====== Dependencies Import ======
 const axios = require('axios');
 const fs = require('fs').promises;
 const path = require('path');
 
-// ====== 数据源配置 ======
+// ====== Data Sources Configuration ======
 const DATA_SOURCES = {
   blogs: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-blogs.json",
   podcasts: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-podcasts.json",
   x: "https://raw.githubusercontent.com/zarazhangrui/follow-builders/main/feed-x.json"
 };
 
-// ====== 缓存文件路径 ======
+// ====== Cache File Path ======
 const CACHE_FILE = path.join(__dirname, 'cache.json');
 
-// ====== 读取缓存 ======
+// ====== Read Cache Safely ======
 async function readCache() {
   try {
     const cacheData = await fs.readFile(CACHE_FILE, 'utf-8');
-    return JSON.parse(cacheData);
+    const cache = JSON.parse(cacheData);
+    
+    // Check if it's today's data, reset if not
+    const cacheDate = cache.lastProcessed?.timestamp ? 
+      new Date(cache.lastProcessed.timestamp).toISOString().split('T')[0] : 
+      null;
+    
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (cacheDate !== today) {
+      console.log(`📅 Cache from different date (${cacheDate}), resetting for today`);
+      return { 
+        lastProcessed: { 
+          timestamp: null, 
+          urlWithMetadata: {}
+        } 
+      };
+    }
+    
+    return cache;
   } catch (error) {
-    console.log('📝 缓存文件不存在，将创建新的');
+    console.log('📝 Cache file does not exist, creating new one');
     return { 
       lastProcessed: { 
         timestamp: null, 
@@ -29,19 +48,19 @@ async function readCache() {
   }
 }
 
-// ====== 写入缓存 ======
+// ====== Write Cache Safely ======
 async function writeCache(cache) {
   try {
     await fs.writeFile(CACHE_FILE, JSON.stringify(cache, null, 2), 'utf-8');
-    console.log('💾 缓存已更新');
+    console.log('💾 Cache updated successfully');
   } catch (error) {
-    console.error('❌ 缓存写入失败:', error.message);
+    console.error('❌ Failed to write cache:', error.message);
   }
 }
 
-// ====== 获取博客数据 ======
+// ====== Fetch Blog Data ======
 async function fetchBlogs() {
-  console.log('📝 正在获取博客数据...');
+  console.log('📝 Fetching blog data...');
   
   try {
     const response = await axios.get(DATA_SOURCES.blogs, { timeout: 8000 });
@@ -57,17 +76,17 @@ async function fetchBlogs() {
       weight: 12
     }));
     
-    console.log(`✅ 获取到 ${blogs.length} 篇博客`);
+    console.log(`✅ Retrieved ${blogs.length} blogs`);
     return blogs;
   } catch (error) {
-    console.error('❌ 获取博客数据失败:', error.message);
+    console.error('❌ Failed to fetch blog data:', error.message);
     return [];
   }
 }
 
-// ====== 获取播客数据 ======
+// ====== Fetch Podcast Data ======
 async function fetchPodcasts() {
-  console.log('🎙️ 正在获取播客数据...');
+  console.log('🎙️ Fetching podcast data...');
   
   try {
     const response = await axios.get(DATA_SOURCES.podcasts, { timeout: 8000 });
@@ -83,17 +102,17 @@ async function fetchPodcasts() {
       weight: 10
     }));
     
-    console.log(`✅ 获取到 ${podcasts.length} 个播客`);
+    console.log(`✅ Retrieved ${podcasts.length} podcasts`);
     return podcasts;
   } catch (error) {
-    console.error('❌ 获取播客数据失败:', error.message);
+    console.error('❌ Failed to fetch podcast data:', error.message);
     return [];
   }
 }
 
-// ====== 获取 X (Twitter) 数据 ======
+// ====== Fetch X (Twitter) Data ======
 async function fetchXData() {
-  console.log('🐦 正在获取 X 数据...');
+  console.log('🐦 Fetching X data...');
   
   try {
     const response = await axios.get(DATA_SOURCES.x, { timeout: 8000 });
@@ -122,15 +141,15 @@ async function fetchXData() {
     }
     
     const filteredTweets = tweets.filter(tweet => tweet.likes >= 10);
-    console.log(`✅ 获取到 ${filteredTweets.length} 条有效推文`);
+    console.log(`✅ Retrieved ${filteredTweets.length} valid tweets`);
     return filteredTweets;
   } catch (error) {
-    console.error('❌ 获取 X 数据失败:', error.message);
+    console.error('❌ Failed to fetch X data:', error.message);
     return [];
   }
 }
 
-// ====== 智能过滤：找出真正的"新内容" ======
+// ====== Smart Filter: Find Truly "New" Content ======
 function findTrulyNewSources(allSources, cachedMetadata) {
   const trulyNewSources = [];
   
@@ -138,10 +157,10 @@ function findTrulyNewSources(allSources, cachedMetadata) {
     const cachedInfo = cachedMetadata[source.url];
     
     if (!cachedInfo) {
-      // 完全新内容
+      // Completely new content
       trulyNewSources.push({ ...source, isNew: true });
     } else {
-      // 检查是否内容有更新
+      // Check if content has been updated
       const currentTime = new Date(source.timestamp);
       const cachedTime = new Date(cachedInfo.timestamp);
       
@@ -151,23 +170,23 @@ function findTrulyNewSources(allSources, cachedMetadata) {
     }
   }
   
-  console.log(`📊 真正的新信息: ${trulyNewSources.length} 条`);
+  console.log(`📊 Truly new information: ${trulyNewSources.length} items`);
   return trulyNewSources;
 }
 
-// ====== 智能选择最重要的3条信息 ======
+// ====== Smart Selection: Top 3 Most Important ======
 function selectTop3Sources(sources) {
-  // 按权重排序
+  // Sort by weight
   const sortedSources = [...sources].sort((a, b) => {
     if (b.weight === a.weight) return new Date(b.timestamp) - new Date(a.timestamp);
     return b.weight - a.weight;
   });
   
-  // 确保类型多样性
+  // Ensure type diversity
   const selected = [];
   const typeCount = { blog: 0, podcast: 0, tweet: 0 };
   
-  // 第一轮：类型平衡选择
+  // Round 1: Type-balanced selection
   for (const source of sortedSources) {
     if (selected.length >= 3) break;
     
@@ -179,7 +198,7 @@ function selectTop3Sources(sources) {
     typeCount[source.type]++;
   }
   
-  // 第二轮：补充不足
+  // Round 2: Fill remaining slots
   if (selected.length < 3) {
     for (const source of sortedSources) {
       if (selected.length >= 3) break;
@@ -189,17 +208,17 @@ function selectTop3Sources(sources) {
     }
   }
   
-  console.log('🎯 智能选择的3条最重要新信息:');
+  console.log('🎯 Smartly selected 3 most important items:');
   selected.forEach((source, i) => {
-    console.log(`   ${i + 1}. [${source.type.toUpperCase()}|权重:${Math.round(source.weight)}] ${source.title.substring(0, 60)}...`);
+    console.log(`   ${i + 1}. [${source.type.toUpperCase()}|Weight:${Math.round(source.weight)}] ${source.title.substring(0, 60)}...`);
   });
   
   return selected;
 }
 
-// ====== 获取所有数据源 ======
+// ====== Fetch All Data Sources ======
 async function fetchAllSources() {
-  console.log('🔄 正在获取所有数据源...');
+  console.log('🔄 Fetching all data sources...');
   
   try {
     const [blogs, podcasts, tweets] = await Promise.allSettled([
@@ -222,31 +241,31 @@ async function fetchAllSources() {
       allSources.push(...tweets.value);
     }
     
-    console.log(`📊 总共获取到 ${allSources.length} 条信息源`);
+    console.log(`📊 Total retrieved: ${allSources.length} items`);
     
-    // 读取缓存
+    // Read cache
     const cache = await readCache();
     const cachedMetadata = cache.lastProcessed.urlWithMetadata || {};
     
-    // 智能过滤：找出真正的"新内容"
+    // Smart filter: find truly "new" content
     const trulyNewSources = findTrulyNewSources(allSources, cachedMetadata);
     
     if (trulyNewSources.length === 0) {
-      console.log('✅ 今日无真正新信息，跳过处理');
+      console.log('✅ No truly new information today, skipping processing');
       return null;
     }
     
-    // 智能选择最重要的3条进行深度分析
+    // Smart selection: top 3 for deep analysis
     const deepAnalysisSources = selectTop3Sources(trulyNewSources);
     
-    // 其他新信息
+    // Other new information
     const summarySources = trulyNewSources.filter(source => 
       !deepAnalysisSources.some(s => s.url === source.url)
     );
     
-    console.log(`📋 其他新信息数量: ${summarySources.length} 条`);
+    console.log(`📋 Other new items count: ${summarySources.length}`);
     
-    // 更新缓存
+    // Update cache
     const updatedMetadata = { ...cachedMetadata };
     [...deepAnalysisSources, ...summarySources].forEach(source => {
       updatedMetadata[source.url] = {
@@ -270,87 +289,92 @@ async function fetchAllSources() {
       totalNew: trulyNewSources.length
     };
   } catch (error) {
-    console.error('❌ 获取数据源失败:', error.message);
+    console.error('❌ Failed to fetch data sources:', error.message);
     throw error;
   }
 }
 
-// ====== 生成AI摘要（严格格式化版） ======
+// ====== Generate AI Summary (Bilingual Version) ======
 async function generateDigest(sourcesData) {
-  console.log('🧠 正在生成严格格式化深度解析...');
+  console.log('🧠 Generating bilingual formatted deep analysis...');
   
   const today = new Date().toISOString().split('T')[0];
   const { deepAnalysisSources, summarySources } = sourcesData;
   
-  // 构建上下文
-  let context = `## ${today} AI技术严格格式化洞察（今日新增${sourcesData.totalNew}条）\n\n`;
+  // Build context
+  let context = `## ${today} AI Tech Bilingual Insights (${sourcesData.totalNew} new items)\n\n`;
   
-  // 深度分析的3条信息
-  context += '### 🔍 深度分析（3条最重要新信息）\n';
+  // Deep analysis of 3 items
+  context += '### 🔍 Deep Analysis (Top 3 Most Important)\n';
   deepAnalysisSources.forEach((source, i) => {
-    context += `\n#### 深度分析 ${i + 1}\n`;
-    context += `**标题**: ${source.title}\n`;
-    context += `**链接**: ${source.url}\n`;
-    context += `**来源**: ${source.source}\n`;
-    context += `**权重**: ${Math.round(source.weight)}\n`;
+    context += `\n#### Deep Analysis ${i + 1}\n`;
+    context += `**Title**: ${source.title}\n`;
+    context += `**Link**: ${source.url}\n`;
+    context += `**Source**: ${source.source}\n`;
+    context += `**Weight**: ${Math.round(source.weight)}\n`;
     if (source.content) {
-      context += `**内容摘要**: ${source.content.substring(0, 200)}...\n`;
+      context += `**Summary**: ${source.content.substring(0, 200)}...\n`;
     } else if (source.transcript) {
-      context += `**内容摘要**: ${source.transcript.substring(0, 200)}...\n`;
+      context += `**Summary**: ${source.transcript.substring(0, 200)}...\n`;
     }
   });
   
-  // 其他新信息
+  // Other new items
   if (summarySources.length > 0) {
-    context += `\n### 📋 其他新信息（共 ${summarySources.length} 条）\n`;
+    context += `\n### 📋 Other New Items (${summarySources.length} items)\n`;
     summarySources.forEach((source, i) => {
-      context += `\n#### 其他信息 ${i + 1}\n`;
-      context += `**标题**: ${source.title}\n`;
-      context += `**链接**: ${source.url}\n`;
-      context += `**来源**: ${source.source}\n`;
+      context += `\n#### Other Item ${i + 1}\n`;
+      context += `**Title**: ${source.title}\n`;
+      context += `**Link**: ${source.url}\n`;
+      context += `**Source**: ${source.source}\n`;
     });
-  }
+  });
   
-  // 【关键】严格按照你要求的格式
-  const prompt = `你是一位资深AI技术产品专家，每日为技术决策者提供严格格式化的洞察。请基于${today}的新信息，严格按以下要求生成洞察：
+  // Enhanced bilingual prompt with security
+  const prompt = `You are a senior AI tech product expert, providing daily bilingual insights for tech decision-makers. Based on ${today}'s new information, generate analysis following bilingual principles:
 
 ${context}
 
-## 严格要求：
-1. **深度分析3条**：对最重要的3条新信息，**每条必须严格按照以下5个模块顺序输出**：
-   - 信息一句话概述
-   - 呈现完整URL  
-   - 核心价值
-   - 技术边界分析（效果、技术限制、新API）
-   - 产品洞见（解决痛点、用户定位、交互革新、竞品对比分析）
-   **每条总字数严格控制在250字以内**
+## Strict Requirements:
+1. **Deep Analysis of 3**: For the 3 most important items, **each must follow exactly 5 modules in order**:
+   📌 One-sentence overview (Chinese dominant, keep English product/tech terms)
+   🔗 Full URL  
+   💎 Core value (Chinese dominant, keep English tech features)
+   🎯 Technical boundary analysis (effects, limitations, new APIs) - Chinese dominant, keep English API names
+   💡 Product insights (pain points solved, user positioning, interaction innovation, competitor analysis) - Chinese dominant
 
-2. **其他所有新信息**：对剩余的${summarySources.length}条新信息，**每条必须严格按照以下3个模块顺序输出**：
-   - 信息一句话概述
-   - 呈现完整URL
-   - 核心价值
-   **每条严格控制在60字以内**
+2. **All Other New Items**: For remaining ${summarySources.length} items, **each must follow exactly 3 modules in order**:
+   📌 One-sentence overview (Chinese dominant, keep English product names)
+   🔗 Full URL
+   💎 Core value (Chinese dominant, keep English technical terms)
+   **Each item limited to 60 characters**
 
-3. **最后**：
-   ❓ 1道思考题（30字以内）
+3. **Finally**:
+   ❓ 1 thought-provoking question (within 30 characters, Chinese dominant)
 
-4. **格式要求**：
-   - 严格按照上述模块顺序，不能打乱
-   - 使用 📌 🔗 💎 🎯 💡 符号标记各模块
-   - 深度分析部分：每个模块一行
-   - 其他信息部分：概述+URL+价值在同一行
-   - 语言精练专业，避免废话
+4. **Format Requirements**:
+   - Strictly follow module order, no shuffling
+   - Use 📌 🔗 💎 🎯 💡 symbols to mark modules
+   - Deep analysis: each module on separate line
+   - Other items: overview+URL+value on same line
+   - Concise and professional language
 
-5. **内容要求**：
-   - 用具体数字和场景，避免模糊描述
-   - 技术分析突出效果数据
-   - 产品分析强调差异化价值
+5. **Bilingual Principles**:
+   - **Chinese Dominant**: Analysis, explanations, summaries in Chinese
+   - **English Preserved**: Product names, brand names, API names, technical terms, company names remain English
+   - **Natural Fusion**: e.g., "OpenAI's GPT model", "React framework", "ChatGPT application"
 
-6. **整体要求**：
-   - **总字数严格控制在1200字以内**
-   - 不要包含"原始信息源"、"数据来源"等无关内容`;
+6. **Content Requirements**:
+   - Specific numbers and scenarios, avoid vague descriptions
+   - Technical analysis highlights effect data
+   - Product analysis emphasizes differentiation value
+
+7. **Overall Requirements**:
+   - **Total length strictly within 1200 characters**
+   - Do not include "original source", "data source" unrelated content`;
 
   try {
+    // Security: Never log sensitive API keys
     const response = await axios.post(
       'https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation',
       {
@@ -369,7 +393,7 @@ ${context}
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,
+          'Authorization': `Bearer ${process.env.DASHSCOPE_API_KEY}`,  // Secure, never logged
           'Content-Type': 'application/json'
         },
         timeout: 150000
@@ -378,31 +402,35 @@ ${context}
 
     if (response.data?.output?.choices?.[0]?.message?.content) {
       const digest = response.data.output.choices[0].message.content;
-      console.log('✅ 严格格式化洞察生成成功');
+      console.log('✅ Bilingual formatted insight generated successfully');
       
       const charCount = digest.replace(/\s+/g, '').length;
-      console.log(`📊 生成内容: ${charCount}字符`);
+      console.log(`📊 Generated content: ${charCount} characters`);
       
       return digest;
     } else {
-      console.error('❌ API响应格式不正确');
-      throw new Error('无法解析API响应');
+      console.error('❌ API response format incorrect');
+      throw new Error('Cannot parse API response');
     }
       
   } catch (error) {
-    console.error('❌ AI生成失败:', error.message);
+    console.error('❌ AI generation failed:', error.message);
     throw error;
   }
 }
 
-// ====== 推送至飞书 ======
+// ====== Send to Feishu (Security Enhanced) ======
 async function sendToFeishu(content, sourcesData) {
-  console.log('🚀 正在推送至飞书...');
+  console.log('🚀 Sending to Feishu...');
   
+  // Security: Validate webhook exists without logging its value
   const webhook = process.env.FEISHU_WEBHOOK;
   if (!webhook) {
-    throw new Error('❌ FEISHU_WEBHOOK 环境变量未设置');
+    throw new Error('❌ FEISHU_WEBHOOK environment variable not set');
   }
+
+  // Security: Never log the actual webhook URL
+  // console.log('Webhook URL:', webhook);  // ❌ NEVER DO THIS!
 
   const currentDate = new Date().toLocaleDateString('zh-CN', {
     year: 'numeric',
@@ -419,10 +447,10 @@ async function sendToFeishu(content, sourcesData) {
     },
     header: {
       title: {
-        content: `AI严格格式化洞察 | ${currentDate} (新增${sourcesData.totalNew}条)`,
+        content: `AI Bilingual Insights | ${currentDate} (New ${sourcesData.totalNew} items)`,
         tag: 'plain_text'
       },
-      template: 'orange'  // 橙色，表示格式化
+      template: 'blue'  // Blue indicates bilingual
     },
     elements: [
       {
@@ -440,7 +468,7 @@ async function sendToFeishu(content, sourcesData) {
         elements: [
           {
             tag: 'plain_text',
-            content: `✅ 3条深度(5模块) + ${summarySources.length}条其他(3模块) | 北京时间08:00推送`
+            content: `✅ 3 Deep(5 modules) + ${summarySources.length} Others(3 modules) | Beijing Time 16:30 Push`
           }
         ]
       }
@@ -449,7 +477,7 @@ async function sendToFeishu(content, sourcesData) {
 
   try {
     const response = await axios.post(
-      webhook,
+      webhook,  // Safe reference, not logged
       {
         msg_type: 'interactive',
         card: cardContent
@@ -457,78 +485,80 @@ async function sendToFeishu(content, sourcesData) {
       {
         headers: { 
           'Content-Type': 'application/json',
-          'User-Agent': 'AI-Tech-Insight-StrictFormat'
+          'User-Agent': 'AI-Tech-Insight-Secure-Bilingual'
         },
         timeout: 20000
       }
     );
 
     if (response.data?.code === 0) {
-      console.log('✅ 严格格式化洞察简报已成功发送至飞书！');
+      console.log('✅ Bilingual insight summary successfully sent to Feishu!');
       return true;
     } else {
-      console.error('❌ 飞书API返回错误:', response.data);
-      throw new Error('飞书API错误');
+      console.error('❌ Feishu API returned error:', response.data);
+      throw new Error('Feishu API error');
     }
   } catch (error) {
-    console.error('❌ 飞书推送失败:', error.message);
+    console.error('❌ Feishu push failed:', error.message);
     throw error;
   }
 }
 
-// ====== 保存摘要到文件 ======
+// ====== Save Summary to File ======
 async function saveDigestToFile(content, sourcesData) {
   try {
-    const filename = `digest_${new Date().toISOString().split('T')[0]}_strict_format.md`;
+    const filename = `digest_${new Date().toISOString().split('T')[0]}_bilingual.md`;
     
     const { deepAnalysisSources, summarySources } = sourcesData;
-    const metadata = `# AI技术严格格式化洞察摘要\n生成时间: ${new Date().toISOString()}\n深度分析条数: ${deepAnalysisSources.length}\n其他新信息条数: ${summarySources.length}\n总新增信息: ${sourcesData.totalNew}\n格式: 深度分析(5模块) + 其他信息(3模块)\n`;
+    const metadata = `# AI Tech Bilingual Insights Summary\nGenerated: ${new Date().toISOString()}\nPush Time: Beijing Time 16:30\nDeep Analysis Count: ${deepAnalysisSources.length}\nOther New Items Count: ${summarySources.length}\nTotal New: ${sourcesData.totalNew}\nFormat: Bilingual(Chinese dominant + English terms)\n`;
     
     const fullContent = `${metadata}\n${'='.repeat(80)}\n\n${content}`;
     
     await fs.writeFile(filename, fullContent, 'utf-8');
-    console.log(`💾 严格格式化洞察已保存到文件: ${filename}`);
+    console.log(`💾 Bilingual insight saved to file: ${filename}`);
   } catch (error) {
-    console.error('❌ 保存文件失败:', error.message);
+    console.error('❌ Failed to save file:', error.message);
   }
 }
 
-// ====== 主流程 ======
+// ====== Main Process ======
 async function main() {
   console.log('========================================');
-  console.log('🚀 AI严格格式化洞察简报 - 精确版');
+  console.log('🚀 AI Bilingual Insight Summary - Precise Edition');
+  console.log('Current Time:', new Date().toISOString());
+  console.log('Beijing Time:', new Date(new Date().getTime() + 8*3600*1000).toISOString());
   console.log('========================================\n');
   
   try {
-    // 1. 获取数据（带真实增量检测）
+    // 1. Fetch data (with real incremental detection)
     const sourcesData = await fetchAllSources();
     
-    // 如果没有新信息，跳过处理
+    // If no new information, skip processing
     if (!sourcesData) {
-      console.log('✅ 今日无新信息，任务结束');
+      console.log('✅ No new information today, task ended');
       return;
     }
     
-    // 2. 生成严格格式化深度解析
+    // 2. Generate bilingual formatted deep analysis
     const digest = await generateDigest(sourcesData);
     
-    // 3. 保存到文件
+    // 3. Save to file
     await saveDigestToFile(digest, sourcesData);
     
-    // 4. 推送至飞书
+    // 4. Push to Feishu
     await sendToFeishu(digest, sourcesData);
     
     console.log('\n========================================');
-    console.log('✅ 全部任务成功完成！');
+    console.log('✅ All tasks completed successfully!');
     console.log('========================================');
     
   } catch (error) {
     console.error('\n========================================');
-    console.error('❌ 任务失败:', error.message);
+    console.error('❌ Task failed:', error.message);
     console.error('========================================');
     process.exit(1);
   }
 }
 
-// ====== 启动程序 ======
+// ====== Launch Program ======
 main();
